@@ -1,7 +1,18 @@
 import { FhirClient } from '../../src/client';
-import { Bundle, CapabilityStatement, Resource } from '../../src/types';
+import { Bundle, CapabilityStatement, Resource, JsonValue } from '../../src/types';
 
 const FHIR_BASE_URL = 'http://localhost:8080/fhir';
+
+// Helper type for Patient resources in tests
+interface PatientName {
+  family?: string;
+  given?: string[];
+}
+
+type Patient = Resource & {
+  name?: PatientName[];
+  gender?: string;
+};
 
 describe('FHIR Client Integration Tests', () => {
   let client: FhirClient;
@@ -72,7 +83,7 @@ describe('FHIR Client Integration Tests', () => {
     });
 
     it('should read the created Patient', async () => {
-      const patient = await client.read('Patient', patientId);
+      const patient = await client.read<Patient>('Patient', patientId);
       
       expect(patient).toBeDefined();
       expect(patient.resourceType).toBe('Patient');
@@ -81,14 +92,14 @@ describe('FHIR Client Integration Tests', () => {
     });
 
     it('should update the Patient', async () => {
-      const patient = await client.read('Patient', patientId);
+      const patient = await client.read<Patient>('Patient', patientId);
       
       // Update the patient's given name
       if (patient.name && patient.name[0]) {
         patient.name[0].given = ['Jane'];
       }
       
-      const updated = await client.update('Patient', patientId, patient);
+      const updated = await client.update<Patient>('Patient', patientId, patient);
       
       expect(updated.name?.[0]?.given?.[0]).toBe('Jane');
     });
@@ -369,10 +380,10 @@ describe('FHIR Client Integration Tests', () => {
       }, { fetchAll: true });
       
       expect(Array.isArray(results)).toBe(true);
-      expect((results as Resource[]).length).toBeGreaterThanOrEqual(numberOfPatients);
+      expect((results as Patient[]).length).toBeGreaterThanOrEqual(numberOfPatients);
       
       // Verify all have the correct family name
-      const allCorrectFamily = (results as Resource[]).every(r => 
+      const allCorrectFamily = (results as Patient[]).every(r => 
         r.name?.[0]?.family === 'PaginationTest'
       );
       expect(allCorrectFamily).toBe(true);
@@ -495,7 +506,7 @@ describe('FHIR Client Integration Tests', () => {
         gender: 'female',
       };
 
-      const result = await client.create<Resource>('Patient', patient);
+      const result = await client.create<Patient>('Patient', patient);
       
       expect(result).toBeDefined();
       expect(result.resourceType).toBe('Patient');

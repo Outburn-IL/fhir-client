@@ -30,10 +30,20 @@ export interface SearchParams {
   [key: string]: string | number | boolean | (string | number | boolean)[];
 }
 
+// JSON-compatible value type for FHIR resources
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
 export interface Resource {
   resourceType: string;
   id?: string;
-  [key: string]: unknown;
+  [key: string]: JsonValue;
 }
 
 export interface Bundle<T extends Resource = Resource> extends Resource {
