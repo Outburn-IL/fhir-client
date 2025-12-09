@@ -33,6 +33,7 @@ export class FhirClient {
     this.client = axios.create({
       baseURL: config.baseUrl,
       headers,
+      timeout: config.timeout ?? 30000, // Default 30 seconds
       auth:
         config.auth?.username && config.auth?.password
           ? {

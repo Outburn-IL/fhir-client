@@ -18,6 +18,7 @@ export interface FhirClientConfig {
     // Future: token, etc.
   };
   headers?: Record<string, string>;
+  timeout?: number; // Request timeout in milliseconds (default: 30000)
   cache?: {
     enable: boolean;
     max?: number; // Max items
