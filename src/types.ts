@@ -62,3 +62,26 @@ export interface Bundle<T extends Resource = Resource> extends Resource {
     };
   }[];
 }
+
+export interface CapabilityStatement extends Resource {
+  resourceType: 'CapabilityStatement';
+  status: string;
+  date: string;
+  kind: string;
+  fhirVersion?: string;
+  format: string[];
+  rest?: {
+    mode: string;
+    resource?: {
+      type: string;
+      interaction?: {
+        code: string;
+      }[];
+      searchParam?: {
+        name: string;
+        type: string;
+        documentation?: string;
+      }[];
+    }[];
+  }[];
+}

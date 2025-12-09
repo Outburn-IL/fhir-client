@@ -38,6 +38,30 @@ describe('FhirClient', () => {
     expect(result).toEqual({ resourceType: 'Patient', id: '123' });
   });
 
+  test('getCapabilities should make a GET request to metadata endpoint', async () => {
+    const capabilityStatement = {
+      resourceType: 'CapabilityStatement',
+      status: 'active',
+      date: '2023-01-01',
+      kind: 'instance',
+      fhirVersion: '4.0.1',
+      format: ['json'],
+    };
+    mockedAxios.request.mockResolvedValueOnce({
+      data: capabilityStatement,
+    });
+
+    const result = await client.getCapabilities();
+
+    expect(mockedAxios.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'GET',
+        url: 'metadata',
+      }),
+    );
+    expect(result).toEqual(capabilityStatement);
+  });
+
   test('search should handle query strings and params', async () => {
     mockedAxios.request.mockResolvedValueOnce({
       data: { resourceType: 'Bundle', entry: [] },

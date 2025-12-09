@@ -2,6 +2,7 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { LRUCache } from 'lru-cache';
 import {
   Bundle,
+  CapabilityStatement,
   FhirClientConfig,
   Resource,
   SearchParams,
@@ -87,6 +88,13 @@ export class FhirClient {
     return this.request<T>({
       method: 'GET',
       url: `${resourceType}/${id}`,
+    });
+  }
+
+  async getCapabilities(): Promise<CapabilityStatement> {
+    return this.request<CapabilityStatement>({
+      method: 'GET',
+      url: 'metadata',
     });
   }
 

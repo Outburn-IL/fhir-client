@@ -46,6 +46,15 @@ const patient = await client.read('Patient', '123');
 console.log(patient);
 ```
 
+### Get Capabilities
+
+```typescript
+// Fetch server capabilities (CapabilityStatement)
+const capabilities = await client.getCapabilities();
+console.log(capabilities.fhirVersion);
+console.log(capabilities.format);
+```
+
 ### Search
 
 ```typescript
@@ -90,7 +99,7 @@ The FHIR client includes built-in caching using an LRU (Least Recently Used) cac
 
 ### How It Works
 
-- **Only GET requests are cached**: `read()` and `search()` operations are cached. Mutations (`create`, `update`, `delete`) are never cached.
+- **Only GET requests are cached**: `read()`, `search()`, and `getCapabilities()` operations are cached. Mutations (`create`, `update`, `delete`) are never cached.
 - **Cache key**: Each request is cached based on the full request configuration (URL, query parameters, headers).
 - **Automatic eviction**: Items are automatically removed when:
   - The TTL (time-to-live) expires
