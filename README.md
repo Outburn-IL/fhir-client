@@ -77,6 +77,42 @@ const newPatient = await client.create('Patient', {
 });
 ```
 
+### Process Transaction
+
+```typescript
+// Process a transaction bundle
+const transactionBundle = {
+  resourceType: 'Bundle',
+  type: 'transaction',
+  entry: [
+    {
+      request: {
+        method: 'POST',
+        url: 'Patient',
+      },
+      resource: {
+        resourceType: 'Patient',
+        name: [{ family: 'Doe', given: ['John'] }],
+      },
+    },
+    {
+      request: {
+        method: 'PUT',
+        url: 'Patient/123',
+      },
+      resource: {
+        resourceType: 'Patient',
+        id: '123',
+        active: false,
+      },
+    },
+  ],
+};
+
+const response = await client.processTransaction(transactionBundle);
+console.log(response.type); // 'transaction-response'
+```
+
 ### Update
 
 ```typescript

@@ -98,6 +98,26 @@ export class FhirClient {
     });
   }
 
+  async processTransaction<T extends Resource = Resource>(
+    bundle: Bundle<T>,
+  ): Promise<Bundle<T>> {
+    if (bundle.resourceType !== 'Bundle') {
+      throw new Error(
+        `processTransaction requires a Bundle resource, got ${bundle.resourceType}`,
+      );
+    }
+    if (bundle.type !== 'transaction') {
+      throw new Error(
+        `processTransaction requires a Bundle of type 'transaction', got '${bundle.type}'`,
+      );
+    }
+    return this.request<Bundle<T>>({
+      method: 'POST',
+      url: '',
+      data: bundle,
+    });
+  }
+
   async create<T extends Resource = Resource>(
     resourceType: string,
     resource: T,
