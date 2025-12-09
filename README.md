@@ -113,6 +113,33 @@ const response = await client.processTransaction(transactionBundle);
 console.log(response.type); // 'transaction-response'
 ```
 
+### Process Batch
+
+```typescript
+// Process a batch bundle
+const batchBundle = {
+  resourceType: 'Bundle',
+  type: 'batch',
+  entry: [
+    {
+      request: {
+        method: 'GET',
+        url: 'Patient/123',
+      },
+    },
+    {
+      request: {
+        method: 'GET',
+        url: 'Patient/456',
+      },
+    },
+  ],
+};
+
+const response = await client.processBatch(batchBundle);
+console.log(response.type); // 'batch-response'
+```
+
 ### Update
 
 ```typescript

@@ -118,6 +118,26 @@ export class FhirClient {
     });
   }
 
+  async processBatch<T extends Resource = Resource>(
+    bundle: Bundle<T>,
+  ): Promise<Bundle<T>> {
+    if (bundle.resourceType !== 'Bundle') {
+      throw new Error(
+        `processBatch requires a Bundle resource, got ${bundle.resourceType}`,
+      );
+    }
+    if (bundle.type !== 'batch') {
+      throw new Error(
+        `processBatch requires a Bundle of type 'batch', got '${bundle.type}'`,
+      );
+    }
+    return this.request<Bundle<T>>({
+      method: 'POST',
+      url: '',
+      data: bundle,
+    });
+  }
+
   async create<T extends Resource = Resource>(
     resourceType: string,
     resource: T,
