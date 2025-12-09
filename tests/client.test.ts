@@ -132,4 +132,263 @@ describe('FhirClient', () => {
       }),
     );
   });
+
+  test('should handle auth with username and password', () => {
+    new FhirClient({
+      baseUrl: 'http://example.com/fhir',
+      fhirVersion: 'R4',
+      auth: {
+        username: 'testuser',
+        password: 'testpass',
+      },
+    });
+
+    expect(mockedAxios.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        auth: {
+          username: 'testuser',
+          password: 'testpass',
+        },
+      }),
+    );
+  });
+
+  test('should handle custom headers', () => {
+    new FhirClient({
+      baseUrl: 'http://example.com/fhir',
+      fhirVersion: 'R4',
+      headers: {
+        'X-Custom-Header': 'custom-value',
+      },
+    });
+
+    expect(mockedAxios.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'X-Custom-Header': 'custom-value',
+        }),
+      }),
+    );
+  });
+
+  test('should enable cache when configured', async () => {
+    const clientWithCache = new FhirClient({
+      baseUrl: 'http://example.com/fhir',
+      fhirVersion: 'R4',
+      cache: {
+        enable: true,
+        max: 50,
+        ttl: 30000,
+      },
+    });
+
+    mockedAxios.request.mockResolvedValueOnce({
+      data: { resourceType: 'Patient', id: '123' },
+    });
+
+    // First call
+    await clientWithCache.read('Patient', '123');
+    expect(mockedAxios.request).toHaveBeenCalledTimes(1);
+
+    // Second call should use cache
+    await clientWithCache.read('Patient', '123');
+    expect(mockedAxios.request).toHaveBeenCalledTimes(1); // Still 1 because cached
+  });
+
+  test('should not cache non-GET requests', async () => {
+    const clientWithCache = new FhirClient({
+      baseUrl: 'http://example.com/fhir',
+      fhirVersion: 'R4',
+      cache: {
+        enable: true,
+      },
+    });
+
+    const patient = { resourceType: 'Patient', name: [{ family: 'Doe' }] };
+    mockedAxios.request
+      .mockResolvedValueOnce({ data: { ...patient, id: '123' } })
+      .mockResolvedValueOnce({ data: { ...patient, id: '456' } });
+
+    await clientWithCache.create('Patient', patient);
+    await clientWithCache.create('Patient', patient);
+
+    expect(mockedAxios.request).toHaveBeenCalledTimes(2);
+  });
+
+  test('should set Content-Type header for POST requests', async () => {
+    const patient = { resourceType: 'Patient', name: [{ family: 'Doe' }] };
+    mockedAxios.request.mockResolvedValueOnce({
+      data: { ...patient, id: '123' },
+    });
+
+    await client.create('Patient', patient);
+
+    expect(mockedAxios.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'Content-Type': 'application/fhir+json; fhirVersion=4.0',
+        }),
+      }),
+    );
+  });
+
+  test('should set Content-Type header for PUT requests', async () => {
+    const patient = { resourceType: 'Patient', id: '123', active: true };
+    mockedAxios.request.mockResolvedValueOnce({ data: patient });
+
+    await client.update('Patient', '123', patient);
+
+    expect(mockedAxios.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'Content-Type': 'application/fhir+json; fhirVersion=4.0',
+        }),
+      }),
+    );
+  });
+
+  test('should handle search without params', async () => {
+    mockedAxios.request.mockResolvedValueOnce({
+      data: { resourceType: 'Bundle', entry: [] },
+    });
+
+    await client.search('Patient');
+
+    expect(mockedAxios.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'GET',
+        url: 'Patient',
+        params: {},
+      }),
+    );
+  });
+
+  test('should handle search with fetchAll when bundle has no entries', async () => {
+    const bundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+    const results = await client.search('Patient', {}, { fetchAll: true });
+
+    expect(results).toEqual([]);
+  });
+
+  test('should handle pagination with missing url in next link', async () => {
+    const bundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      link: [{ relation: 'next', url: '' }],
+      entry: [{ resource: { resourceType: 'Patient', id: '1' } }],
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+    const results = await client.search('Patient', {}, { fetchAll: true });
+
+    expect(results).toHaveLength(1);
+    expect(mockedAxios.request).toHaveBeenCalledTimes(1);
+  });
+
+  test('should handle pagination errors gracefully', async () => {
+    const bundle1: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      link: [{ relation: 'next', url: 'http://example.com/fhir/Patient?page=2' }],
+      entry: [{ resource: { resourceType: 'Patient', id: '1' } }],
+    };
+
+    mockedAxios.request
+      .mockResolvedValueOnce({ data: bundle1 })
+      .mockRejectedValueOnce(new Error('Network error'));
+
+    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+    const results = await client.search('Patient', {}, { fetchAll: true });
+
+    expect(results).toHaveLength(1);
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      'Failed to fetch next page',
+      expect.any(Error),
+    );
+
+    consoleWarnSpy.mockRestore();
+  });
+
+  test('should handle FHIR version R3', () => {
+    new FhirClient({
+      baseUrl: 'http://example.com/fhir',
+      fhirVersion: 'R3',
+    });
+
+    expect(mockedAxios.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: 'application/fhir+json; fhirVersion=3.0',
+        }),
+      }),
+    );
+  });
+
+  test('should handle FHIR version R5', () => {
+    new FhirClient({
+      baseUrl: 'http://example.com/fhir',
+      fhirVersion: 'R5',
+    });
+
+    expect(mockedAxios.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: 'application/fhir+json; fhirVersion=5.0',
+        }),
+      }),
+    );
+  });
+
+  test('should handle FHIR version 3.0.1', () => {
+    new FhirClient({
+      baseUrl: 'http://example.com/fhir',
+      fhirVersion: '3.0.1',
+    });
+
+    expect(mockedAxios.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: 'application/fhir+json; fhirVersion=3.0',
+        }),
+      }),
+    );
+  });
+
+  test('should handle FHIR version 4.0.1', () => {
+    new FhirClient({
+      baseUrl: 'http://example.com/fhir',
+      fhirVersion: '4.0.1',
+    });
+
+    expect(mockedAxios.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: 'application/fhir+json; fhirVersion=4.0',
+        }),
+      }),
+    );
+  });
+
+  test('should handle FHIR version 5.0.0', () => {
+    new FhirClient({
+      baseUrl: 'http://example.com/fhir',
+      fhirVersion: '5.0.0',
+    });
+
+    expect(mockedAxios.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Accept: 'application/fhir+json; fhirVersion=5.0',
+        }),
+      }),
+    );
+  });
 });
