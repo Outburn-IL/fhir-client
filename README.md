@@ -1,4 +1,6 @@
 # FHIR Client
+[![npm version](https://img.shields.io/npm/v/@outburn/fhir-client.svg)](https://www.npmjs.com/package/@outburn/fhir-client)
+
 A modern, lightweight FHIR client for TypeScript/JavaScript with support for R3, R4, and R5.
 
 ## Features
@@ -82,6 +84,136 @@ const updatedPatient = await client.update('Patient', '123', {
 await client.delete('Patient', '123');
 ```
 
-## License
+## Caching
 
-MIT
+The FHIR client includes built-in caching using an LRU (Least Recently Used) cache. Caching significantly improves performance by storing responses from GET requests and reusing them for identical subsequent requests.
+
+### How It Works
+
+- **Only GET requests are cached**: `read()` and `search()` operations are cached. Mutations (`create`, `update`, `delete`) are never cached.
+- **Cache key**: Each request is cached based on the full request configuration (URL, query parameters, headers).
+- **Automatic eviction**: Items are automatically removed when:
+  - The TTL (time-to-live) expires
+  - The cache reaches its maximum size and needs to make room for new items (LRU policy)
+
+### Configuration Options
+
+#### Disabled (Default)
+
+By default, caching is **disabled**. You must explicitly enable it:
+
+```typescript
+const client = new FhirClient({
+  baseUrl: 'https://hapi.fhir.org/baseR4',
+  fhirVersion: 'R4',
+  // No cache config = caching disabled
+});
+```
+
+#### Basic Caching (TTL Only)
+
+Enable caching with just a time-to-live. Uses default max size of 100 items:
+
+```typescript
+const client = new FhirClient({
+  baseUrl: 'https://hapi.fhir.org/baseR4',
+  fhirVersion: 'R4',
+  cache: {
+    enable: true,
+    ttl: 60000, // Items expire after 60 seconds (1 minute)
+  },
+});
+```
+
+**Defaults when `enable: true`**:
+- `max`: 100 items
+- `ttl`: 300000 ms (5 minutes)
+
+#### Full Configuration (TTL + Max Size)
+
+Configure both time-to-live and maximum cache size:
+
+```typescript
+const client = new FhirClient({
+  baseUrl: 'https://hapi.fhir.org/baseR4',
+  fhirVersion: 'R4',
+  cache: {
+    enable: true,
+    max: 500,      // Store up to 500 items
+    ttl: 120000,   // Items expire after 120 seconds (2 minutes)
+  },
+});
+```
+
+#### Minimal TTL Configuration
+
+For very short-lived caches (e.g., during a single workflow):
+
+```typescript
+const client = new FhirClient({
+  baseUrl: 'https://hapi.fhir.org/baseR4',
+  fhirVersion: 'R4',
+  cache: {
+    enable: true,
+    ttl: 10000, // 10 seconds
+    max: 50,    // Small cache for temporary use
+  },
+});
+```
+
+#### Long-Lived Cache
+
+For read-heavy applications with relatively stable data:
+
+```typescript
+const client = new FhirClient({
+  baseUrl: 'https://hapi.fhir.org/baseR4',
+  fhirVersion: 'R4',
+  cache: {
+    enable: true,
+    ttl: 3600000,  // 1 hour
+    max: 1000,     // Large cache size
+  },
+});
+```
+
+### Expected Behavior
+
+```typescript
+const client = new FhirClient({
+  baseUrl: 'https://hapi.fhir.org/baseR4',
+  fhirVersion: 'R4',
+  cache: {
+    enable: true,
+    ttl: 60000,
+    max: 100,
+  },
+});
+
+// First call - hits the server
+const patient1 = await client.read('Patient', '123');
+
+// Second call within 60 seconds - returns cached result (no server request)
+const patient2 = await client.read('Patient', '123');
+
+// After 60 seconds - cache expired, hits the server again
+await sleep(61000);
+const patient3 = await client.read('Patient', '123');
+
+// Different resource - hits the server (different cache key)
+const patient4 = await client.read('Patient', '456');
+
+// Mutations always hit the server (never cached)
+await client.update('Patient', '123', updatedPatient); // Always hits server
+await client.create('Patient', newPatient);            // Always hits server
+await client.delete('Patient', '789');                 // Always hits server
+```
+
+## License
+MIT  
+© Outburn Ltd. 2022–2025. All Rights Reserved.
+
+---
+
+## Disclaimer
+This project is part of the [FUME](https://github.com/Outburn-IL/fume-community) open-source initiative and intended for use in FHIR tooling and development environments.
