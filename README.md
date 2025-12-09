@@ -1,5 +1,4 @@
-# fhir-client
-
+# FHIR Client
 A modern, lightweight FHIR client for TypeScript/JavaScript with support for R3, R4, and R5.
 
 ## Features
@@ -14,7 +13,7 @@ A modern, lightweight FHIR client for TypeScript/JavaScript with support for R3,
 ## Installation
 
 ```bash
-npm install fhir-client
+npm install @outburn/fhir-client
 ```
 
 ## Usage
@@ -22,7 +21,7 @@ npm install fhir-client
 ### Initialization
 
 ```typescript
-import { FhirClient } from 'fhir-client';
+import { FhirClient } from '@outburn/fhir-client';
 
 const client = new FhirClient({
   baseUrl: 'https://hapi.fhir.org/baseR4',
