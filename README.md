@@ -281,6 +281,49 @@ await client.create('Patient', newPatient);            // Always hits server
 await client.delete('Patient', '789');                 // Always hits server
 ```
 
+## Testing
+
+The project includes both unit tests and integration tests.
+
+### Unit Tests
+
+Run unit tests with coverage:
+
+```bash
+npm test
+```
+
+Unit tests are located in `tests/` and provide comprehensive coverage of the client's functionality using mocked HTTP responses.
+
+### Integration Tests
+
+Integration tests run against a real HAPI FHIR R4 server using Docker Compose. They verify the client works correctly with an actual FHIR server.
+
+**Prerequisites:**
+- Docker and Docker Compose installed and running
+- Port 8080 available
+
+**Run integration tests:**
+
+```bash
+npm run test:integration
+```
+
+**Run all tests (unit + integration):**
+
+```bash
+npm run test:all
+```
+
+Integration tests cover:
+- Server metadata and capabilities
+- CRUD operations on Patient, Encounter, and Observation resources
+- Pagination with fetchAll (tests with 250+ resources)
+- Bundle operations (transaction and batch)
+- Error handling
+
+For more details, see [tests/integration/README.md](tests/integration/README.md).
+
 ## License
 MIT  
 © Outburn Ltd. 2022–2025. All Rights Reserved.

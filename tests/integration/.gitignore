@@ -1,0 +1,5 @@
+# Docker volumes and data
+docker-compose.override.yml
+
+# Logs
+*.log
