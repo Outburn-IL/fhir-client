@@ -46,6 +46,15 @@ const patient = await client.read('Patient', '123');
 console.log(patient);
 ```
 
+### Get Capabilities
+
+```typescript
+// Fetch server capabilities (CapabilityStatement)
+const capabilities = await client.getCapabilities();
+console.log(capabilities.fhirVersion);
+console.log(capabilities.format);
+```
+
 ### Search
 
 ```typescript
@@ -66,6 +75,69 @@ const newPatient = await client.create('Patient', {
   resourceType: 'Patient',
   name: [{ family: 'Doe', given: ['John'] }],
 });
+```
+
+### Process Transaction
+
+```typescript
+// Process a transaction bundle
+const transactionBundle = {
+  resourceType: 'Bundle',
+  type: 'transaction',
+  entry: [
+    {
+      request: {
+        method: 'POST',
+        url: 'Patient',
+      },
+      resource: {
+        resourceType: 'Patient',
+        name: [{ family: 'Doe', given: ['John'] }],
+      },
+    },
+    {
+      request: {
+        method: 'PUT',
+        url: 'Patient/123',
+      },
+      resource: {
+        resourceType: 'Patient',
+        id: '123',
+        active: false,
+      },
+    },
+  ],
+};
+
+const response = await client.processTransaction(transactionBundle);
+console.log(response.type); // 'transaction-response'
+```
+
+### Process Batch
+
+```typescript
+// Process a batch bundle
+const batchBundle = {
+  resourceType: 'Bundle',
+  type: 'batch',
+  entry: [
+    {
+      request: {
+        method: 'GET',
+        url: 'Patient/123',
+      },
+    },
+    {
+      request: {
+        method: 'GET',
+        url: 'Patient/456',
+      },
+    },
+  ],
+};
+
+const response = await client.processBatch(batchBundle);
+console.log(response.type); // 'batch-response'
 ```
 
 ### Update
@@ -90,7 +162,7 @@ The FHIR client includes built-in caching using an LRU (Least Recently Used) cac
 
 ### How It Works
 
-- **Only GET requests are cached**: `read()` and `search()` operations are cached. Mutations (`create`, `update`, `delete`) are never cached.
+- **Only GET requests are cached**: `read()`, `search()`, and `getCapabilities()` operations are cached. Mutations (`create`, `update`, `delete`) are never cached.
 - **Cache key**: Each request is cached based on the full request configuration (URL, query parameters, headers).
 - **Automatic eviction**: Items are automatically removed when:
   - The TTL (time-to-live) expires
@@ -208,6 +280,49 @@ await client.update('Patient', '123', updatedPatient); // Always hits server
 await client.create('Patient', newPatient);            // Always hits server
 await client.delete('Patient', '789');                 // Always hits server
 ```
+
+## Testing
+
+The project includes both unit tests and integration tests.
+
+### Unit Tests
+
+Run unit tests with coverage:
+
+```bash
+npm test
+```
+
+Unit tests are located in `tests/` and provide comprehensive coverage of the client's functionality using mocked HTTP responses.
+
+### Integration Tests
+
+Integration tests run against a real HAPI FHIR R4 server using Docker Compose. They verify the client works correctly with an actual FHIR server.
+
+**Prerequisites:**
+- Docker and Docker Compose installed and running
+- Port 8080 available
+
+**Run integration tests:**
+
+```bash
+npm run test:integration
+```
+
+**Run all tests (unit + integration):**
+
+```bash
+npm run test:all
+```
+
+Integration tests cover:
+- Server metadata and capabilities
+- CRUD operations on Patient, Encounter, and Observation resources
+- Pagination with fetchAll (tests with 250+ resources)
+- Bundle operations (transaction and batch)
+- Error handling
+
+For more details, see [tests/integration/README.md](tests/integration/README.md).
 
 ## License
 MIT  

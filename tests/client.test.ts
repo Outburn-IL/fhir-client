@@ -38,6 +38,30 @@ describe('FhirClient', () => {
     expect(result).toEqual({ resourceType: 'Patient', id: '123' });
   });
 
+  test('getCapabilities should make a GET request to metadata endpoint', async () => {
+    const capabilityStatement = {
+      resourceType: 'CapabilityStatement',
+      status: 'active',
+      date: '2023-01-01',
+      kind: 'instance',
+      fhirVersion: '4.0.1',
+      format: ['json'],
+    };
+    mockedAxios.request.mockResolvedValueOnce({
+      data: capabilityStatement,
+    });
+
+    const result = await client.getCapabilities();
+
+    expect(mockedAxios.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'GET',
+        url: 'metadata',
+      }),
+    );
+    expect(result).toEqual(capabilityStatement);
+  });
+
   test('search should handle query strings and params', async () => {
     mockedAxios.request.mockResolvedValueOnce({
       data: { resourceType: 'Bundle', entry: [] },
@@ -100,6 +124,184 @@ describe('FhirClient', () => {
       }),
     );
     expect(result).toEqual({ ...patient, id: '123' });
+  });
+
+  test('processTransaction should POST bundle to root', async () => {
+    const transactionBundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'transaction',
+      entry: [
+        {
+          request: {
+            method: 'POST',
+            url: 'Patient',
+          },
+          resource: {
+            resourceType: 'Patient',
+            name: [{ family: 'Doe' }],
+          },
+        },
+      ],
+    };
+
+    const responseBundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'transaction-response',
+      entry: [
+        {
+          response: {
+            status: '201 Created',
+            location: 'Patient/123',
+          },
+        },
+      ],
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({
+      data: responseBundle,
+    });
+
+    const result = await client.processTransaction(transactionBundle);
+
+    expect(mockedAxios.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'POST',
+        url: '',
+        data: transactionBundle,
+      }),
+    );
+    expect(result).toEqual(responseBundle);
+  });
+
+  test('processTransaction should throw error for non-Bundle resource', async () => {
+    const notABundle: any = {
+      resourceType: 'Patient',
+      id: '123',
+    };
+
+    await expect(client.processTransaction(notABundle)).rejects.toThrow(
+      "processTransaction requires a Bundle resource, got Patient",
+    );
+  });
+
+  test('processTransaction should throw error for non-transaction Bundle type', async () => {
+    const searchBundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: [],
+    };
+
+    await expect(client.processTransaction(searchBundle)).rejects.toThrow(
+      "processTransaction requires a Bundle of type 'transaction', got 'searchset'",
+    );
+  });
+
+  test('processTransaction should throw error for batch Bundle type', async () => {
+    const batchBundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'batch',
+      entry: [],
+    };
+
+    await expect(client.processTransaction(batchBundle)).rejects.toThrow(
+      "processTransaction requires a Bundle of type 'transaction', got 'batch'",
+    );
+  });
+
+  test('processBatch should POST bundle to root', async () => {
+    const batchBundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'batch',
+      entry: [
+        {
+          request: {
+            method: 'GET',
+            url: 'Patient/123',
+          },
+        },
+        {
+          request: {
+            method: 'GET',
+            url: 'Patient/456',
+          },
+        },
+      ],
+    };
+
+    const responseBundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'batch-response',
+      entry: [
+        {
+          response: {
+            status: '200 OK',
+          },
+          resource: {
+            resourceType: 'Patient',
+            id: '123',
+          },
+        },
+        {
+          response: {
+            status: '200 OK',
+          },
+          resource: {
+            resourceType: 'Patient',
+            id: '456',
+          },
+        },
+      ],
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({
+      data: responseBundle,
+    });
+
+    const result = await client.processBatch(batchBundle);
+
+    expect(mockedAxios.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'POST',
+        url: '',
+        data: batchBundle,
+      }),
+    );
+    expect(result).toEqual(responseBundle);
+  });
+
+  test('processBatch should throw error for non-Bundle resource', async () => {
+    const notABundle: any = {
+      resourceType: 'Patient',
+      id: '123',
+    };
+
+    await expect(client.processBatch(notABundle)).rejects.toThrow(
+      "processBatch requires a Bundle resource, got Patient",
+    );
+  });
+
+  test('processBatch should throw error for non-batch Bundle type', async () => {
+    const searchBundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: [],
+    };
+
+    await expect(client.processBatch(searchBundle)).rejects.toThrow(
+      "processBatch requires a Bundle of type 'batch', got 'searchset'",
+    );
+  });
+
+  test('processBatch should throw error for transaction Bundle type', async () => {
+    const transactionBundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'transaction',
+      entry: [],
+    };
+
+    await expect(client.processBatch(transactionBundle)).rejects.toThrow(
+      "processBatch requires a Bundle of type 'batch', got 'transaction'",
+    );
   });
 
   test('update should make a PUT request', async () => {

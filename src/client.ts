@@ -2,6 +2,7 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { LRUCache } from 'lru-cache';
 import {
   Bundle,
+  CapabilityStatement,
   FhirClientConfig,
   Resource,
   SearchParams,
@@ -87,6 +88,53 @@ export class FhirClient {
     return this.request<T>({
       method: 'GET',
       url: `${resourceType}/${id}`,
+    });
+  }
+
+  async getCapabilities(): Promise<CapabilityStatement> {
+    return this.request<CapabilityStatement>({
+      method: 'GET',
+      url: 'metadata',
+    });
+  }
+
+  async processTransaction<T extends Resource = Resource>(
+    bundle: Bundle<T>,
+  ): Promise<Bundle<T>> {
+    if (bundle.resourceType !== 'Bundle') {
+      throw new Error(
+        `processTransaction requires a Bundle resource, got ${bundle.resourceType}`,
+      );
+    }
+    if (bundle.type !== 'transaction') {
+      throw new Error(
+        `processTransaction requires a Bundle of type 'transaction', got '${bundle.type}'`,
+      );
+    }
+    return this.request<Bundle<T>>({
+      method: 'POST',
+      url: '',
+      data: bundle,
+    });
+  }
+
+  async processBatch<T extends Resource = Resource>(
+    bundle: Bundle<T>,
+  ): Promise<Bundle<T>> {
+    if (bundle.resourceType !== 'Bundle') {
+      throw new Error(
+        `processBatch requires a Bundle resource, got ${bundle.resourceType}`,
+      );
+    }
+    if (bundle.type !== 'batch') {
+      throw new Error(
+        `processBatch requires a Bundle of type 'batch', got '${bundle.type}'`,
+      );
+    }
+    return this.request<Bundle<T>>({
+      method: 'POST',
+      url: '',
+      data: bundle,
     });
   }
 
