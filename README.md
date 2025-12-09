@@ -28,6 +28,7 @@ import { FhirClient } from '@outburn/fhir-client';
 const client = new FhirClient({
   baseUrl: 'https://hapi.fhir.org/baseR4',
   fhirVersion: 'R4',
+  timeout: 30000, // Optional: Request timeout in ms (default: 30000)
   auth: {
     username: 'user',
     password: 'password',
@@ -156,8 +157,23 @@ const updatedPatient = await client.update('Patient', '123', {
 await client.delete('Patient', '123');
 ```
 
-## Caching
+## Configuration
 
+### Timeout
+
+All HTTP requests have a configurable timeout to prevent indefinite waiting:
+
+```typescript
+const client = new FhirClient({
+  baseUrl: 'https://hapi.fhir.org/baseR4',
+  fhirVersion: 'R4',
+  timeout: 30000, // Default: 30000ms (30 seconds)
+});
+```
+
+If a request takes longer than the specified timeout, it will be aborted and throw an error. You can customize this value based on your server's expected response times.
+
+## Caching
 The FHIR client includes built-in caching using an LRU (Least Recently Used) cache. Caching significantly improves performance by storing responses from GET requests and reusing them for identical subsequent requests.
 
 ### How It Works
@@ -168,7 +184,7 @@ The FHIR client includes built-in caching using an LRU (Least Recently Used) cac
   - The TTL (time-to-live) expires
   - The cache reaches its maximum size and needs to make room for new items (LRU policy)
 
-### Configuration Options
+### Caching Configuration Options
 
 #### Disabled (Default)
 

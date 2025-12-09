@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from 'axios';
 import { FhirClient } from '../src/client';
 import { Bundle } from '../src/types';

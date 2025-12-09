@@ -21,10 +21,10 @@ export function normalizeFhirVersion(version: FhirVersion): string {
 
 export function mergeSearchParams(
   query: string,
-  params?: Record<string, any>,
-): Record<string, any> {
+  params?: Record<string, string | number | boolean | (string | number | boolean)[]>,
+): Record<string, string | number | boolean | (string | number | boolean)[]> {
   const urlParams = new URLSearchParams(query);
-  const merged: Record<string, any> = {};
+  const merged: Record<string, string | number | boolean | (string | number | boolean)[]> = {};
 
   // Add params from query string
   urlParams.forEach((value: string, key: string) => {

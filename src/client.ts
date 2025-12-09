@@ -12,7 +12,7 @@ import { mergeSearchParams, normalizeFhirVersion } from './utils';
 export class FhirClient {
   private client: AxiosInstance;
   private config: FhirClientConfig;
-  private cache?: LRUCache<string, any>;
+  private cache?: LRUCache<string, Record<string, unknown>>;
 
   constructor(config: FhirClientConfig) {
     this.config = config;
@@ -33,6 +33,7 @@ export class FhirClient {
     this.client = axios.create({
       baseURL: config.baseUrl,
       headers,
+      timeout: config.timeout ?? 30000, // Default 30 seconds
       auth:
         config.auth?.username && config.auth?.password
           ? {
@@ -50,7 +51,7 @@ export class FhirClient {
     }
   }
 
-  private async request<T = any>(config: AxiosRequestConfig): Promise<T> {
+  private async request<T = unknown>(config: AxiosRequestConfig): Promise<T> {
     const cacheKey = this.cache ? JSON.stringify(config) : null;
 
     if (this.cache && config.method?.toLowerCase() === 'get') {
@@ -75,7 +76,7 @@ export class FhirClient {
     const response: AxiosResponse<T> = await this.client.request(config);
 
     if (this.cache && config.method?.toLowerCase() === 'get') {
-      this.cache.set(cacheKey!, response.data);
+      this.cache.set(cacheKey!, response.data as Record<string, unknown>);
     }
 
     return response.data;
@@ -174,7 +175,7 @@ export class FhirClient {
     options?: { fetchAll?: boolean },
   ): Promise<Bundle<T> | T[]> {
     let url = resourceTypeOrQuery;
-    let searchParams: Record<string, any> = {};
+    let searchParams: Record<string, string | number | boolean | (string | number | boolean)[]> = {};
 
     // Check if resourceTypeOrQuery contains a query string
     const queryIndex = resourceTypeOrQuery.indexOf('?');

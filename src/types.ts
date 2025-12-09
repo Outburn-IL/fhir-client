@@ -18,6 +18,7 @@ export interface FhirClientConfig {
     // Future: token, etc.
   };
   headers?: Record<string, string>;
+  timeout?: number; // Request timeout in milliseconds (default: 30000)
   cache?: {
     enable: boolean;
     max?: number; // Max items
@@ -29,10 +30,20 @@ export interface SearchParams {
   [key: string]: string | number | boolean | (string | number | boolean)[];
 }
 
+// JSON-compatible value type for FHIR resources
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
 export interface Resource {
   resourceType: string;
   id?: string;
-  [key: string]: any;
+  [key: string]: JsonValue;
 }
 
 export interface Bundle<T extends Resource = Resource> extends Resource {
