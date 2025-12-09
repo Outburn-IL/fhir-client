@@ -20,6 +20,12 @@
   ],
   "author": "Outburn Ltd.",
   "license": "MIT",
+    "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Outburn-IL/fhir-client.git"
+  },
+  "bugs": "https://github.com/Outburn-IL/fhir-client/issues",
+  "homepage": "https://github.com/Outburn-IL/fhir-client#readme",
   "dependencies": {
     "axios": "^1.13.2",
     "lru-cache": "^11.2.4"
