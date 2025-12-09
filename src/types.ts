@@ -33,7 +33,7 @@ export interface SearchParams {
 export interface Resource {
   resourceType: string;
   id?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface Bundle<T extends Resource = Resource> extends Resource {
