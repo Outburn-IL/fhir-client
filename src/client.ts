@@ -294,4 +294,88 @@ export class FhirClient {
 
     return results;
   }
+
+  async toLiteral(
+    resourceTypeOrQuery: string,
+    params?: SearchParams,
+    options?: { asPost?: boolean; noCache?: boolean },
+  ): Promise<string> {
+    const bundle = await this.search<Resource>(
+      resourceTypeOrQuery,
+      params,
+      { ...options, fetchAll: false },
+    ) as Bundle<Resource>;
+
+    // Filter for entries with search.mode === 'match' to exclude OperationOutcome and other informational entries
+    const matchEntries = (bundle.entry || []).filter(
+      (entry) => !entry.search || entry.search.mode === 'match'
+    );
+
+    if (matchEntries.length === 0) {
+      throw new Error('Search returned no match');
+    }
+
+    if (matchEntries.length > 1) {
+      throw new Error('Search returned multiple matches, criteria not selective enough');
+    }
+
+    const resource = matchEntries[0].resource;
+    if (!resource?.resourceType || !resource?.id) {
+      throw new Error('Resource must have resourceType and id');
+    }
+
+    return `${resource.resourceType}/${resource.id}`;
+  }
+
+  async resourceId(
+    resourceTypeOrQuery: string,
+    params?: SearchParams,
+    options?: { asPost?: boolean; noCache?: boolean },
+  ): Promise<string> {
+    const literal = await this.toLiteral(resourceTypeOrQuery, params, options);
+    const id = literal.split('/')[1];
+    return id;
+  }
+
+  async resolve<T extends Resource = Resource>(
+    literalOrQuery: string,
+    params?: SearchParams,
+    options?: { asPost?: boolean; noCache?: boolean },
+  ): Promise<T> {
+    // Check if it's a literal reference (resourceType/id format)
+    const literalPattern = /^[A-Z][a-zA-Z]+\/[A-Za-z0-9\-\.]+$/;
+    
+    if (literalPattern.test(literalOrQuery) && !params) {
+      // It's a literal reference, perform a read
+      const [resourceType, id] = literalOrQuery.split('/');
+      return this.read<T>(resourceType, id, options);
+    }
+
+    // It's a search query, resolve to single resource
+    const bundle = await this.search<T>(
+      literalOrQuery,
+      params,
+      { ...options, fetchAll: false },
+    ) as Bundle<T>;
+
+    // Filter for entries with search.mode === 'match' to exclude OperationOutcome and other informational entries
+    const matchEntries = (bundle.entry || []).filter(
+      (entry) => !entry.search || entry.search.mode === 'match'
+    );
+
+    if (matchEntries.length === 0) {
+      throw new Error('Search returned no match');
+    }
+
+    if (matchEntries.length > 1) {
+      throw new Error('Search returned multiple matches, criteria not selective enough');
+    }
+
+    const resource = matchEntries[0].resource;
+    if (!resource) {
+      throw new Error('Resource not found in bundle entry');
+    }
+
+    return resource;
+  }
 }

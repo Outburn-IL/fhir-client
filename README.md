@@ -182,6 +182,48 @@ const updatedPatient = await client.update({
 await client.delete('Patient', '123');
 ```
 
+### Resolve Single Resource
+
+These methods help you find and work with single resources using search criteria. They automatically filter out informational entries (like `OperationOutcome` with `search.mode !== 'match'`) and only count actual resource matches.
+
+#### `toLiteral`
+Searches for a resource and returns its literal reference (`resourceType/id`). Throws an error if zero or multiple matches are found.
+
+```typescript
+// Find patient by identifier and get their reference
+const ref = await client.toLiteral('Patient', { identifier: 'http://system|12345' });
+console.log(ref); // "Patient/abc-123"
+
+// Even if the server includes an OperationOutcome in the Bundle, it will be ignored
+// and only the actual Patient match will be counted
+```
+
+#### `resourceId`
+Same as `toLiteral` but returns only the ID part.
+
+```typescript
+const id = await client.resourceId('Patient', { identifier: 'http://system|12345' });
+console.log(id); // "abc-123"
+```
+
+#### `resolve`
+Hybrid method that can:
+- Read a resource using a literal reference: `resolve('Patient/123')`
+- Search for a single resource and return it: `resolve('Patient', { identifier: '...' })`
+
+Throws an error if search returns zero or multiple matches.
+
+```typescript
+// Using literal reference (equivalent to read)
+const patient1 = await client.resolve('Patient/123');
+
+// Using search criteria (must return exactly one match)
+const patient2 = await client.resolve('Patient', { identifier: 'http://system|12345' });
+
+// With options
+const patient3 = await client.resolve('Patient', { name: 'Doe' }, { noCache: true });
+```
+
 ## Search Options
 
 The `search` method accepts an optional third parameter with the following options:

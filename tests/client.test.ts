@@ -766,4 +766,294 @@ describe('FhirClient', () => {
       }),
     );
   });
+
+  describe('toLiteral', () => {
+    test('should return literal reference for single match', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [
+          {
+            resource: { resourceType: 'Patient', id: '123', name: [{ family: 'Doe' }] },
+          },
+        ],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      const literal = await client.toLiteral('Patient', { name: 'Doe' });
+
+      expect(literal).toBe('Patient/123');
+    });
+
+    test('should throw error when no matches found', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      await expect(client.toLiteral('Patient', { name: 'Unknown' })).rejects.toThrow(
+        'Search returned no match'
+      );
+    });
+
+    test('should throw error when multiple matches found', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [
+          { resource: { resourceType: 'Patient', id: '123' } },
+          { resource: { resourceType: 'Patient', id: '456' } },
+        ],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      await expect(client.toLiteral('Patient', { name: 'Doe' })).rejects.toThrow(
+        'Search returned multiple matches, criteria not selective enough'
+      );
+    });
+
+    test('should throw error if resource lacks id', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [{ resource: { resourceType: 'Patient' } }],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      await expect(client.toLiteral('Patient', { name: 'Doe' })).rejects.toThrow(
+        'Resource must have resourceType and id'
+      );
+    });
+
+    test('should ignore OperationOutcome entries and return match', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [
+          {
+            resource: { resourceType: 'Patient', id: '123', name: [{ family: 'Doe' }] },
+            search: { mode: 'match' },
+          },
+          {
+            resource: { resourceType: 'OperationOutcome', issue: [] },
+            search: { mode: 'outcome' },
+          },
+        ],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      const literal = await client.toLiteral('Patient', { name: 'Doe' });
+
+      expect(literal).toBe('Patient/123');
+    });
+
+    test('should handle entries without search.mode as matches', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [
+          {
+            resource: { resourceType: 'Patient', id: '123' },
+            // No search.mode property
+          },
+        ],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      const literal = await client.toLiteral('Patient', { name: 'Doe' });
+
+      expect(literal).toBe('Patient/123');
+    });
+
+    test('should throw error if resource lacks id', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [{ resource: { resourceType: 'Patient' } }],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      await expect(client.toLiteral('Patient', { name: 'Doe' })).rejects.toThrow(
+        'Resource must have resourceType and id'
+      );
+    });
+
+    test('should support asPost and noCache options', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [{ resource: { resourceType: 'Patient', id: '123' } }],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      const result = await client.toLiteral('Patient', { name: 'Doe' }, { asPost: true, noCache: true });
+
+      expect(result).toBe('Patient/123');
+      // Verify the search was called (implementation details of how are internal)
+      expect(mockedAxios.request).toHaveBeenCalled();
+    });
+  });
+
+  describe('resourceId', () => {
+    test('should return only the id from literal reference', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [{ resource: { resourceType: 'Patient', id: 'abc-123' } }],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      const id = await client.resourceId('Patient', { identifier: 'http://test|123' });
+
+      expect(id).toBe('abc-123');
+    });
+
+    test('should throw error when no matches found', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      await expect(client.resourceId('Patient', { name: 'Unknown' })).rejects.toThrow(
+        'Search returned no match'
+      );
+    });
+  });
+
+  describe('resolve', () => {
+    test('should resolve using literal reference', async () => {
+      const patient = { resourceType: 'Patient', id: '123', name: [{ family: 'Doe' }] };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: patient });
+
+      const result = await client.resolve('Patient/123');
+
+      expect(result).toEqual(patient);
+      expect(mockedAxios.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'GET',
+          url: 'Patient/123',
+        })
+      );
+    });
+
+    test('should resolve using search query', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [
+          {
+            resource: { resourceType: 'Patient', id: '456', name: [{ family: 'Smith' }] },
+          },
+        ],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      const result = await client.resolve('Patient', { identifier: 'http://test|456' });
+
+      expect(result).toEqual(bundle.entry![0].resource);
+    });
+
+    test('should ignore OperationOutcome entries when resolving', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [
+          {
+            resource: { resourceType: 'Patient', id: '789', name: [{ family: 'Johnson' }] },
+            search: { mode: 'match' },
+          },
+          {
+            resource: { resourceType: 'OperationOutcome', issue: [{ severity: 'information' }] },
+            search: { mode: 'outcome' },
+          },
+        ],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      const result = await client.resolve('Patient', { identifier: 'http://test|789' });
+
+      expect(result.id).toBe('789');
+      expect(result.resourceType).toBe('Patient');
+    });
+
+    test('should throw error when search returns no match', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      await expect(client.resolve('Patient', { name: 'Unknown' })).rejects.toThrow(
+        'Search returned no match'
+      );
+    });
+
+    test('should throw error when search returns multiple matches', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [
+          { resource: { resourceType: 'Patient', id: '123' } },
+          { resource: { resourceType: 'Patient', id: '456' } },
+        ],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      await expect(client.resolve('Patient', { name: 'Doe' })).rejects.toThrow(
+        'Search returned multiple matches, criteria not selective enough'
+      );
+    });
+
+    test('should distinguish between literal reference and query with slashes', async () => {
+      const patient = { resourceType: 'Patient', id: '123' };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: patient });
+
+      // This should be treated as a literal reference
+      await client.resolve('Patient/123');
+
+      expect(mockedAxios.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'GET',
+          url: 'Patient/123',
+        })
+      );
+    });
+
+    test('should support noCache option with literal reference', async () => {
+      const patient = { resourceType: 'Patient', id: '123' };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: patient });
+
+      const result = await client.resolve('Patient/123', undefined, { noCache: true });
+
+      expect(result).toEqual(patient);
+      expect(mockedAxios.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'GET',
+          url: 'Patient/123',
+        })
+      );
+    });
+  });
 });
