@@ -51,10 +51,13 @@ export class FhirClient {
     }
   }
 
-  private async request<T = unknown>(config: AxiosRequestConfig): Promise<T> {
+  private async request<T = unknown>(
+    config: AxiosRequestConfig,
+    noCache = false,
+  ): Promise<T> {
     const cacheKey = this.cache ? JSON.stringify(config) : null;
 
-    if (this.cache && config.method?.toLowerCase() === 'get') {
+    if (this.cache && config.method?.toLowerCase() === 'get' && !noCache) {
       const cached = this.cache.get(cacheKey!);
       if (cached) {
         return cached as T;
@@ -75,7 +78,7 @@ export class FhirClient {
 
     const response: AxiosResponse<T> = await this.client.request(config);
 
-    if (this.cache && config.method?.toLowerCase() === 'get') {
+    if (this.cache && config.method?.toLowerCase() === 'get' && !noCache) {
       this.cache.set(cacheKey!, response.data as Record<string, unknown>);
     }
 
@@ -172,7 +175,12 @@ export class FhirClient {
   async search<T extends Resource = Resource>(
     resourceTypeOrQuery: string,
     params?: SearchParams,
-    options?: { fetchAll?: boolean; maxResults?: number },
+    options?: {
+      fetchAll?: boolean;
+      maxResults?: number;
+      asPost?: boolean;
+      noCache?: boolean;
+    },
   ): Promise<Bundle<T> | T[]> {
     let url = resourceTypeOrQuery;
     let searchParams: Record<string, string | number | boolean | (string | number | boolean)[]> = {};
@@ -187,11 +195,38 @@ export class FhirClient {
       searchParams = params || {};
     }
 
-    const response = await this.request<Bundle<T>>({
-      method: 'GET',
-      url,
-      params: searchParams,
-    });
+    let response: Bundle<T>;
+
+    if (options?.asPost) {
+      // FHIR search via POST with _search endpoint and form-urlencoded
+      const searchUrl = url.includes('/_search') ? url : `${url}/_search`;
+      response = await this.request<Bundle<T>>(
+        {
+          method: 'POST',
+          url: searchUrl,
+          data: new URLSearchParams(
+            Object.entries(searchParams).map(([key, value]) => [
+              key,
+              String(value),
+            ]),
+          ).toString(),
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        },
+        options?.noCache,
+      );
+    } else {
+      // Standard GET search
+      response = await this.request<Bundle<T>>(
+        {
+          method: 'GET',
+          url,
+          params: searchParams,
+        },
+        options?.noCache,
+      );
+    }
 
     if (options?.fetchAll) {
       const maxResults = options.maxResults ?? this.config.maxFetchAllResults ?? 10000;

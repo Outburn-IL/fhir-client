@@ -577,6 +577,81 @@ describe('FhirClient', () => {
     ).rejects.toThrow('Maximum result limit (8) exceeded');
   });
 
+  test('should use POST with _search endpoint when asPost is true', async () => {
+    const bundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: [{ resource: { resourceType: 'Patient', id: '1' } }],
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+    await client.search('Patient', { name: 'John', active: true }, { asPost: true });
+
+    expect(mockedAxios.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'POST',
+        url: 'Patient/_search',
+        headers: expect.objectContaining({
+          'Content-Type': 'application/x-www-form-urlencoded',
+        }),
+        data: expect.stringContaining('name=John'),
+      })
+    );
+  });
+
+  test('should use existing _search in URL when asPost is true', async () => {
+    const bundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: [],
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+    await client.search('Patient/_search', { name: 'Jane' }, { asPost: true });
+
+    expect(mockedAxios.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'POST',
+        url: 'Patient/_search',
+      })
+    );
+  });
+
+  test('should bypass cache when noCache is true', async () => {
+    const clientWithCache = new FhirClient({
+      baseUrl: 'http://example.com/fhir',
+      fhirVersion: 'R4',
+      cache: { enable: true },
+    });
+
+    const bundle1: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: [{ resource: { resourceType: 'Patient', id: '1' } }],
+    };
+
+    const bundle2: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: [{ resource: { resourceType: 'Patient', id: '2' } }],
+    };
+
+    mockedAxios.request
+      .mockResolvedValueOnce({ data: bundle1 })
+      .mockResolvedValueOnce({ data: bundle2 });
+
+    // First call - should cache
+    const result1 = await clientWithCache.search('Patient', { name: 'John' });
+    expect(result1).toBe(bundle1);
+
+    // Second call with noCache - should bypass cache and get fresh data
+    const result2 = await clientWithCache.search('Patient', { name: 'John' }, { noCache: true });
+    expect(result2).toBe(bundle2);
+    expect(mockedAxios.request).toHaveBeenCalledTimes(2);
+  });
+
   test('should handle FHIR version R3', () => {
     new FhirClient({
       baseUrl: 'http://example.com/fhir',

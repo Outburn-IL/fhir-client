@@ -70,6 +70,19 @@ const allPatients = await client.search('Patient', { active: true }, { fetchAll:
 
 // Override the default max limit for this search
 const manyPatients = await client.search('Patient', {}, { fetchAll: true, maxResults: 50000 });
+
+// Search via POST with form-urlencoded (useful for long query strings or server requirements)
+const postResults = await client.search('Patient', { name: 'John' }, { asPost: true });
+
+// Bypass cache and fetch fresh data from server
+const freshData = await client.search('Patient', { _id: '123' }, { noCache: true });
+
+// Combine options
+const freshAllPatients = await client.search(
+  'Patient',
+  { active: true },
+  { fetchAll: true, noCache: true, asPost: true }
+);
 ```
 
 ### Create
@@ -159,6 +172,45 @@ const updatedPatient = await client.update('Patient', '123', {
 ```typescript
 await client.delete('Patient', '123');
 ```
+
+## Search Options
+
+The `search` method accepts an optional third parameter with the following options:
+
+### `fetchAll`
+Automatically fetches all pages of results by following `next` links in the Bundle. Returns an array of resources instead of a Bundle.
+
+```typescript
+const allPatients = await client.search('Patient', { active: true }, { fetchAll: true });
+// Returns: Patient[] instead of Bundle
+```
+
+### `maxResults`
+Maximum number of resources to fetch when using `fetchAll`. Overrides the client-level `maxFetchAllResults` config for this specific search.
+
+```typescript
+const patients = await client.search('Patient', {}, { fetchAll: true, maxResults: 5000 });
+```
+
+### `asPost`
+Use HTTP POST with `application/x-www-form-urlencoded` instead of GET. Useful when:
+- Query strings are too long for GET requests
+- Server requires POST for search operations
+- Working with servers that have URL length limitations
+
+```typescript
+const results = await client.search('Patient', { name: 'John' }, { asPost: true });
+// POSTs to: Patient/_search with form data
+```
+
+### `noCache`
+Bypass the cache and fetch fresh data from the server, even if a cached response exists.
+
+```typescript
+const freshData = await client.search('Patient', { _id: '123' }, { noCache: true });
+```
+
+All options can be combined as needed.
 
 ## Configuration
 
