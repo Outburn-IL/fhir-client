@@ -51,10 +51,13 @@ export class FhirClient {
     }
   }
 
-  private async request<T = unknown>(config: AxiosRequestConfig): Promise<T> {
+  private async request<T = unknown>(
+    config: AxiosRequestConfig,
+    noCache = false,
+  ): Promise<T> {
     const cacheKey = this.cache ? JSON.stringify(config) : null;
 
-    if (this.cache && config.method?.toLowerCase() === 'get') {
+    if (this.cache && config.method?.toLowerCase() === 'get' && !noCache) {
       const cached = this.cache.get(cacheKey!);
       if (cached) {
         return cached as T;
@@ -75,7 +78,7 @@ export class FhirClient {
 
     const response: AxiosResponse<T> = await this.client.request(config);
 
-    if (this.cache && config.method?.toLowerCase() === 'get') {
+    if (this.cache && config.method?.toLowerCase() === 'get' && !noCache) {
       this.cache.set(cacheKey!, response.data as Record<string, unknown>);
     }
 
@@ -85,11 +88,15 @@ export class FhirClient {
   async read<T extends Resource = Resource>(
     resourceType: string,
     id: string,
+    options?: { noCache?: boolean },
   ): Promise<T> {
-    return this.request<T>({
-      method: 'GET',
-      url: `${resourceType}/${id}`,
-    });
+    return this.request<T>(
+      {
+        method: 'GET',
+        url: `${resourceType}/${id}`,
+      },
+      options?.noCache,
+    );
   }
 
   async getCapabilities(): Promise<CapabilityStatement> {
@@ -150,14 +157,16 @@ export class FhirClient {
     });
   }
 
-  async update<T extends Resource = Resource>(
-    resourceType: string,
-    id: string,
-    resource: T,
-  ): Promise<T> {
+  async update<T extends Resource = Resource>(resource: T): Promise<T> {
+    if (!resource.resourceType) {
+      throw new Error('Resource must have a resourceType property');
+    }
+    if (!resource.id) {
+      throw new Error('Resource must have an id property for update operation');
+    }
     return this.request<T>({
       method: 'PUT',
-      url: `${resourceType}/${id}`,
+      url: `${resource.resourceType}/${resource.id}`,
       data: resource,
     });
   }
@@ -172,7 +181,12 @@ export class FhirClient {
   async search<T extends Resource = Resource>(
     resourceTypeOrQuery: string,
     params?: SearchParams,
-    options?: { fetchAll?: boolean },
+    options?: {
+      fetchAll?: boolean;
+      maxResults?: number;
+      asPost?: boolean;
+      noCache?: boolean;
+    },
   ): Promise<Bundle<T> | T[]> {
     let url = resourceTypeOrQuery;
     let searchParams: Record<string, string | number | boolean | (string | number | boolean)[]> = {};
@@ -187,14 +201,65 @@ export class FhirClient {
       searchParams = params || {};
     }
 
-    const response = await this.request<Bundle<T>>({
-      method: 'GET',
-      url,
-      params: searchParams,
-    });
+    let response: Bundle<T>;
+
+    if (options?.asPost) {
+      // FHIR search via POST with _search endpoint and form-urlencoded
+      const searchUrl = url.includes('/_search') ? url : `${url}/_search`;
+      
+      // IMPORTANT: We manually construct URLSearchParams instead of using axios's `params` option
+      // because axios doesn't support FHIR's array serialization format.
+      // FHIR requires: identifier=val1&identifier=val2 (duplicate keys for AND semantics)
+      // Axios produces: identifier[]=val1&identifier[]=val2 or identifier=val1,val2
+      // Using URLSearchParams.append() gives us the correct FHIR format.
+      const formParams = new URLSearchParams();
+      Object.entries(searchParams).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          value.forEach((v) => formParams.append(key, String(v)));
+        } else {
+          formParams.append(key, String(value));
+        }
+      });
+      
+      response = await this.request<Bundle<T>>(
+        {
+          method: 'POST',
+          url: searchUrl,
+          data: formParams.toString(),
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        },
+        options?.noCache,
+      );
+    } else {
+      // Standard GET search
+      // IMPORTANT: We manually construct the URL instead of using axios's `params` option
+      // because axios doesn't support FHIR's array serialization format.
+      // FHIR requires: identifier=val1&identifier=val2 (duplicate keys for AND semantics)
+      // Axios produces: identifier[]=val1&identifier[]=val2 or identifier=val1,val2
+      // Using URLSearchParams.append() gives us the correct FHIR format.
+      const queryParams = new URLSearchParams();
+      Object.entries(searchParams).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          value.forEach((v) => queryParams.append(key, String(v)));
+        } else {
+          queryParams.append(key, String(value));
+        }
+      });
+      
+      response = await this.request<Bundle<T>>(
+        {
+          method: 'GET',
+          url: queryParams.toString() ? `${url}?${queryParams.toString()}` : url,
+        },
+        options?.noCache,
+      );
+    }
 
     if (options?.fetchAll) {
-      return this.fetchAllPages(response);
+      const maxResults = options.maxResults ?? this.config.maxFetchAllResults ?? 10000;
+      return this.fetchAllPages(response, maxResults);
     }
 
     return response;
@@ -202,6 +267,7 @@ export class FhirClient {
 
   private async fetchAllPages<T extends Resource>(
     initialBundle: Bundle<T>,
+    maxResults: number,
   ): Promise<T[]> {
     const results: T[] = [];
     let currentBundle = initialBundle;
@@ -214,54 +280,125 @@ export class FhirClient {
       );
     }
 
+    if (results.length > maxResults) {
+      throw new Error(
+        `Maximum result limit (${maxResults}) exceeded. Narrow down your search or increase maxFetchAllResults.`,
+      );
+    }
+
     while (
       currentBundle.link &&
       currentBundle.link.some((l) => l.relation === 'next')
     ) {
       const nextLink = currentBundle.link.find((l) => l.relation === 'next');
       if (!nextLink || !nextLink.url) break;
-
-      // We need to handle the next link. It might be a full URL or relative.
-      // Axios handles full URLs in request config 'url' if it overrides baseURL?
-      // Actually, if we pass a full URL to axios with a baseURL set, axios might behave differently depending on implementation.
-      // But usually, if the URL is absolute, axios uses it.
       
-      // However, we need to be careful about authentication and headers.
-      // The `request` method uses `this.client` which has the baseURL and headers.
-      // If we pass a full URL, we should ensure it works.
+      const nextUrl = nextLink.url;
       
-      try {
-        // We use the raw client to avoid double-processing headers if they are already in the client config,
-        // but we need to ensure we use the `request` wrapper for caching if we want caching on pages (maybe not needed for fetchAll).
-        // But `request` wrapper adds Content-Type which is not needed for GET, but it also handles caching.
-        // Let's use `request` but we need to handle the URL correctly.
-        
-        // If nextLink.url is absolute, we can pass it.
-        // But we need to strip the baseURL if we want to use the same client instance cleanly, OR just pass the full URL.
-        
-        const nextUrl = nextLink.url;
-        
-        // If we use this.request, we need to pass the config.
-        // If nextUrl is absolute, we can set it as url.
-        
-        currentBundle = await this.request<Bundle<T>>({
-          method: 'GET',
-          url: nextUrl,
-        });
+      currentBundle = await this.request<Bundle<T>>({
+        method: 'GET',
+        url: nextUrl,
+      });
 
-        if (currentBundle.entry) {
-          results.push(
-            ...currentBundle.entry
-              .map((e) => e.resource)
-              .filter((r): r is T => !!r),
-          );
-        }
-      } catch (e) {
-        console.warn('Failed to fetch next page', e);
-        break;
+      if (currentBundle.entry) {
+        results.push(
+          ...currentBundle.entry
+            .map((e) => e.resource)
+            .filter((r): r is T => !!r),
+        );
+      }
+
+      if (results.length > maxResults) {
+        throw new Error(
+          `Maximum result limit (${maxResults}) exceeded. Narrow down your search or increase maxFetchAllResults.`,
+        );
       }
     }
 
     return results;
+  }
+
+  async toLiteral(
+    resourceTypeOrQuery: string,
+    params?: SearchParams,
+    options?: { asPost?: boolean; noCache?: boolean },
+  ): Promise<string> {
+    const bundle = await this.search<Resource>(
+      resourceTypeOrQuery,
+      params,
+      { ...options, fetchAll: false },
+    ) as Bundle<Resource>;
+
+    // Filter for entries with search.mode === 'match' to exclude OperationOutcome and other informational entries
+    const matchEntries = (bundle.entry || []).filter(
+      (entry) => !entry.search || entry.search.mode === 'match'
+    );
+
+    if (matchEntries.length === 0) {
+      throw new Error('Search returned no match');
+    }
+
+    if (matchEntries.length > 1) {
+      throw new Error(`Search returned multiple matches (${matchEntries.length}), criteria not selective enough`);
+    }
+
+    const resource = matchEntries[0].resource;
+    if (!resource?.resourceType || !resource?.id) {
+      throw new Error('Server returned malformed resource without resourceType or id');
+    }
+
+    return `${resource.resourceType}/${resource.id}`;
+  }
+
+  async resourceId(
+    resourceTypeOrQuery: string,
+    params?: SearchParams,
+    options?: { asPost?: boolean; noCache?: boolean },
+  ): Promise<string> {
+    const literal = await this.toLiteral(resourceTypeOrQuery, params, options);
+    const id = literal.split('/')[1];
+    return id;
+  }
+
+  async resolve<T extends Resource = Resource>(
+    literalOrQuery: string,
+    params?: SearchParams,
+    options?: { asPost?: boolean; noCache?: boolean },
+  ): Promise<T> {
+    // Check if it's a literal reference (resourceType/id format)
+    const literalPattern = /^[A-Z][a-zA-Z]+\/[A-Za-z0-9-.]+$/;
+    
+    if (literalPattern.test(literalOrQuery) && !params) {
+      // It's a literal reference, perform a read
+      const [resourceType, id] = literalOrQuery.split('/');
+      return this.read<T>(resourceType, id, options);
+    }
+
+    // It's a search query, resolve to single resource
+    const bundle = await this.search<T>(
+      literalOrQuery,
+      params,
+      { ...options, fetchAll: false },
+    ) as Bundle<T>;
+
+    // Filter for entries with search.mode === 'match' to exclude OperationOutcome and other informational entries
+    const matchEntries = (bundle.entry || []).filter(
+      (entry) => !entry.search || entry.search.mode === 'match'
+    );
+
+    if (matchEntries.length === 0) {
+      throw new Error('Search returned no match');
+    }
+
+    if (matchEntries.length > 1) {
+      throw new Error('Search returned multiple matches, criteria not selective enough');
+    }
+
+    const resource = matchEntries[0].resource;
+    if (!resource) {
+      throw new Error('Server returned bundle entry without resource');
+    }
+
+    return resource;
   }
 }

@@ -74,7 +74,7 @@ describe('FHIR Client Integration Tests', () => {
         birthDate: '1980-01-01',
       };
 
-      const result = await client.update('Patient', patientId, patient);
+      const result = await client.update(patient);
       
       expect(result).toBeDefined();
       expect(result.resourceType).toBe('Patient');
@@ -99,7 +99,7 @@ describe('FHIR Client Integration Tests', () => {
         patient.name[0].given = ['Jane'];
       }
       
-      const updated = await client.update<Patient>('Patient', patientId, patient);
+      const updated = await client.update<Patient>(patient);
       
       expect(updated.name?.[0]?.given?.[0]).toBe('Jane');
     });
@@ -137,7 +137,7 @@ describe('FHIR Client Integration Tests', () => {
           given: ['Bob'],
         }],
       };
-      await client.update('Patient', patientId, patient);
+      await client.update(patient);
     });
 
     afterAll(async () => {
@@ -168,7 +168,7 @@ describe('FHIR Client Integration Tests', () => {
         },
       };
 
-      const result = await client.update('Encounter', encounterId, encounter);
+      const result = await client.update(encounter);
       
       expect(result).toBeDefined();
       expect(result.resourceType).toBe('Encounter');
@@ -210,7 +210,7 @@ describe('FHIR Client Integration Tests', () => {
           given: ['Alice'],
         }],
       };
-      await client.update('Patient', patientId, patient);
+      await client.update(patient);
     });
 
     afterAll(async () => {
@@ -250,7 +250,7 @@ describe('FHIR Client Integration Tests', () => {
         },
       };
 
-      const result = await client.update('Observation', observationId, observation);
+      const result = await client.update(observation);
       
       expect(result).toBeDefined();
       expect(result.resourceType).toBe('Observation');
