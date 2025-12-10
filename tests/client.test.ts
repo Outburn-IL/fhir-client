@@ -813,21 +813,7 @@ describe('FhirClient', () => {
       mockedAxios.request.mockResolvedValueOnce({ data: bundle });
 
       await expect(client.toLiteral('Patient', { name: 'Doe' })).rejects.toThrow(
-        'Search returned multiple matches, criteria not selective enough'
-      );
-    });
-
-    test('should throw error if resource lacks id', async () => {
-      const bundle: Bundle = {
-        resourceType: 'Bundle',
-        type: 'searchset',
-        entry: [{ resource: { resourceType: 'Patient' } }],
-      };
-
-      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
-
-      await expect(client.toLiteral('Patient', { name: 'Doe' })).rejects.toThrow(
-        'Resource must have resourceType and id'
+        'Search returned multiple matches (2), criteria not selective enough'
       );
     });
 
@@ -854,6 +840,20 @@ describe('FhirClient', () => {
       expect(literal).toBe('Patient/123');
     });
 
+    test('should throw error if server returns resource without id', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [{ resource: { resourceType: 'Patient' } }],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      await expect(client.toLiteral('Patient', { name: 'Doe' })).rejects.toThrow(
+        'Server returned malformed resource without resourceType or id'
+      );
+    });
+
     test('should handle entries without search.mode as matches', async () => {
       const bundle: Bundle = {
         resourceType: 'Bundle',
@@ -871,20 +871,6 @@ describe('FhirClient', () => {
       const literal = await client.toLiteral('Patient', { name: 'Doe' });
 
       expect(literal).toBe('Patient/123');
-    });
-
-    test('should throw error if resource lacks id', async () => {
-      const bundle: Bundle = {
-        resourceType: 'Bundle',
-        type: 'searchset',
-        entry: [{ resource: { resourceType: 'Patient' } }],
-      };
-
-      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
-
-      await expect(client.toLiteral('Patient', { name: 'Doe' })).rejects.toThrow(
-        'Resource must have resourceType and id'
-      );
     });
 
     test('should support asPost and noCache options', async () => {
@@ -991,6 +977,20 @@ describe('FhirClient', () => {
 
       expect(result.id).toBe('789');
       expect(result.resourceType).toBe('Patient');
+    });
+
+    test('should throw error if server returns entry without resource', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [{ search: { mode: 'match' } }],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      await expect(client.resolve('Patient', { name: 'Test' })).rejects.toThrow(
+        'Server returned bundle entry without resource'
+      );
     });
 
     test('should throw error when search returns no match', async () => {

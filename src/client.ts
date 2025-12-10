@@ -316,12 +316,12 @@ export class FhirClient {
     }
 
     if (matchEntries.length > 1) {
-      throw new Error('Search returned multiple matches, criteria not selective enough');
+      throw new Error(`Search returned multiple matches (${matchEntries.length}), criteria not selective enough`);
     }
 
     const resource = matchEntries[0].resource;
     if (!resource?.resourceType || !resource?.id) {
-      throw new Error('Resource must have resourceType and id');
+      throw new Error('Server returned malformed resource without resourceType or id');
     }
 
     return `${resource.resourceType}/${resource.id}`;
@@ -373,7 +373,7 @@ export class FhirClient {
 
     const resource = matchEntries[0].resource;
     if (!resource) {
-      throw new Error('Resource not found in bundle entry');
+      throw new Error('Server returned bundle entry without resource');
     }
 
     return resource;
