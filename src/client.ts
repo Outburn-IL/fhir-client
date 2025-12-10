@@ -343,7 +343,7 @@ export class FhirClient {
     options?: { asPost?: boolean; noCache?: boolean },
   ): Promise<T> {
     // Check if it's a literal reference (resourceType/id format)
-    const literalPattern = /^[A-Z][a-zA-Z]+\/[A-Za-z0-9\-\.]+$/;
+    const literalPattern = /^[A-Z][a-zA-Z]+\/[A-Za-z0-9-.]+$/;
     
     if (literalPattern.test(literalOrQuery) && !params) {
       // It's a literal reference, perform a read

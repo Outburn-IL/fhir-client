@@ -10,8 +10,9 @@
     "test:integration": "jest --config jest.integration.config.js",
     "test:all": "npm test && npm run test:integration",
     "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run lint && npm run build"
   },
   "keywords": [
     "fhir",

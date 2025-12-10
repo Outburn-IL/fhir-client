@@ -463,6 +463,49 @@ Integration tests cover:
 
 For more details, see [tests/integration/README.md](tests/integration/README.md).
 
+## Development
+
+### Prerequisites
+
+This project uses ESLint and Prettier for code quality. We recommend installing the following VS Code extensions (they will be suggested automatically when you open the project):
+
+- [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint)
+- [Prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
+
+### Scripts
+
+```bash
+# Run tests
+npm test
+
+# Run integration tests (requires Docker)
+npm run test:integration
+
+# Run all tests
+npm run test:all
+
+# Lint code
+npm run lint
+
+# Lint and auto-fix
+npm run lint:fix
+
+# Format code
+npm run format
+
+# Build
+npm run build
+```
+
+### Pre-commit Checklist
+
+Before committing, ensure:
+1. `npm run lint` passes with no errors
+2. `npm test` passes
+3. Code is formatted with Prettier
+
+The `prepublishOnly` script will automatically run linting and build before publishing.
+
 ## License
 MIT  
 © Outburn Ltd. 2022–2025. All Rights Reserved.
