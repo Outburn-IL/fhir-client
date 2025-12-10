@@ -163,7 +163,13 @@ console.log(response.type); // 'batch-response'
 ### Update
 
 ```typescript
-const updatedPatient = await client.update('Patient', '123', {
+// Read, modify, and update
+const patient = await client.read('Patient', '123');
+patient.active = false;
+const updatedPatient = await client.update(patient);
+
+// Or update directly with a resource object (must include resourceType and id)
+const updatedPatient = await client.update({
   resourceType: 'Patient',
   id: '123',
   active: false,

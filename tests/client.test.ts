@@ -311,7 +311,7 @@ describe('FhirClient', () => {
       data: patient,
     });
 
-    const result = await client.update('Patient', '123', patient);
+    const result = await client.update(patient);
 
     expect(mockedAxios.request).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -321,6 +321,22 @@ describe('FhirClient', () => {
       }),
     );
     expect(result).toEqual(patient);
+  });
+
+  test('update should throw error if resourceType is missing', async () => {
+    const patient = { id: '123', active: true } as any;
+
+    await expect(client.update(patient)).rejects.toThrow(
+      'Resource must have a resourceType property'
+    );
+  });
+
+  test('update should throw error if id is missing', async () => {
+    const patient = { resourceType: 'Patient', active: true } as any;
+
+    await expect(client.update(patient)).rejects.toThrow(
+      'Resource must have an id property for update operation'
+    );
   });
 
   test('delete should make a DELETE request', async () => {
@@ -463,7 +479,7 @@ describe('FhirClient', () => {
     const patient = { resourceType: 'Patient', id: '123', active: true };
     mockedAxios.request.mockResolvedValueOnce({ data: patient });
 
-    await client.update('Patient', '123', patient);
+    await client.update(patient);
 
     expect(mockedAxios.request).toHaveBeenCalledWith(
       expect.objectContaining({
