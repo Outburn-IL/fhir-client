@@ -206,16 +206,26 @@ export class FhirClient {
     if (options?.asPost) {
       // FHIR search via POST with _search endpoint and form-urlencoded
       const searchUrl = url.includes('/_search') ? url : `${url}/_search`;
+      
+      // IMPORTANT: We manually construct URLSearchParams instead of using axios's `params` option
+      // because axios doesn't support FHIR's array serialization format.
+      // FHIR requires: identifier=val1&identifier=val2 (duplicate keys for AND semantics)
+      // Axios produces: identifier[]=val1&identifier[]=val2 or identifier=val1,val2
+      // Using URLSearchParams.append() gives us the correct FHIR format.
+      const formParams = new URLSearchParams();
+      Object.entries(searchParams).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          value.forEach((v) => formParams.append(key, String(v)));
+        } else {
+          formParams.append(key, String(value));
+        }
+      });
+      
       response = await this.request<Bundle<T>>(
         {
           method: 'POST',
           url: searchUrl,
-          data: new URLSearchParams(
-            Object.entries(searchParams).map(([key, value]) => [
-              key,
-              String(value),
-            ]),
-          ).toString(),
+          data: formParams.toString(),
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
           },
@@ -224,11 +234,24 @@ export class FhirClient {
       );
     } else {
       // Standard GET search
+      // IMPORTANT: We manually construct the URL instead of using axios's `params` option
+      // because axios doesn't support FHIR's array serialization format.
+      // FHIR requires: identifier=val1&identifier=val2 (duplicate keys for AND semantics)
+      // Axios produces: identifier[]=val1&identifier[]=val2 or identifier=val1,val2
+      // Using URLSearchParams.append() gives us the correct FHIR format.
+      const queryParams = new URLSearchParams();
+      Object.entries(searchParams).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          value.forEach((v) => queryParams.append(key, String(v)));
+        } else {
+          queryParams.append(key, String(value));
+        }
+      });
+      
       response = await this.request<Bundle<T>>(
         {
           method: 'GET',
-          url,
-          params: searchParams,
+          url: queryParams.toString() ? `${url}?${queryParams.toString()}` : url,
         },
         options?.noCache,
       );

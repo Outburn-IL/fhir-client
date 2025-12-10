@@ -73,13 +73,13 @@ describe('FhirClient', () => {
     expect(mockedAxios.request).toHaveBeenCalledWith(
       expect.objectContaining({
         method: 'GET',
-        url: 'Patient',
-        params: {
-          name: 'john',
-          active: true,
-        },
+        url: expect.stringContaining('Patient?'),
       }),
     );
+    
+    const callUrl = mockedAxios.request.mock.calls[0][0].url;
+    expect(callUrl).toContain('name=john');
+    expect(callUrl).toContain('active=true');
   });
 
   test('search with fetchAll should follow pagination links', async () => {
@@ -501,7 +501,6 @@ describe('FhirClient', () => {
       expect.objectContaining({
         method: 'GET',
         url: 'Patient',
-        params: {},
       }),
     );
   });
@@ -657,6 +656,59 @@ describe('FhirClient', () => {
         url: 'Patient/_search',
       })
     );
+  });
+
+  test('should handle array values in POST search parameters', async () => {
+    const bundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: [],
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+    await client.search('Patient', { identifier: ['http://hospital.org/mrn|123', 'http://national-id.gov/ssn|456'], active: true }, { asPost: true });
+
+    expect(mockedAxios.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'POST',
+        url: 'Patient/_search',
+        headers: expect.objectContaining({
+          'Content-Type': 'application/x-www-form-urlencoded',
+        }),
+        // Should contain multiple identifier parameters, not a comma-separated string
+        data: expect.stringMatching(/identifier=http%3A%2F%2Fhospital.*identifier=http%3A%2F%2Fnational|identifier=http%3A%2F%2Fnational.*identifier=http%3A%2F%2Fhospital/),
+      })
+    );
+    
+    // Verify it doesn't use comma-separated format
+    const callData = mockedAxios.request.mock.calls[0][0].data;
+    expect(callData).not.toContain('identifier=http://hospital.org/mrn|123,http://national-id.gov/ssn|456');
+  });
+
+  test('should handle array values in GET search parameters', async () => {
+    const bundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: [],
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+    await client.search('Patient', { identifier: ['http://hospital.org/mrn|123', 'http://national-id.gov/ssn|456'], active: true });
+
+    expect(mockedAxios.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'GET',
+        // URL should contain multiple identifier parameters
+        url: expect.stringMatching(/\?.*identifier=http%3A%2F%2Fhospital.*identifier=http%3A%2F%2Fnational|identifier=http%3A%2F%2Fnational.*identifier=http%3A%2F%2Fhospital/),
+      })
+    );
+    
+    // Verify it doesn't use bracket notation or comma-separated format
+    const callUrl = mockedAxios.request.mock.calls[0][0].url;
+    expect(callUrl).not.toContain('identifier[]=');
+    expect(callUrl).not.toContain('identifier=http://hospital.org/mrn|123,http://national-id.gov/ssn|456');
   });
 
   test('should bypass cache when noCache is true', async () => {
