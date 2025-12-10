@@ -398,6 +398,30 @@ describe('FhirClient', () => {
     expect(mockedAxios.request).toHaveBeenCalledTimes(1); // Still 1 because cached
   });
 
+  test('should bypass cache for read when noCache is true', async () => {
+    const clientWithCache = new FhirClient({
+      baseUrl: 'http://example.com/fhir',
+      fhirVersion: 'R4',
+      cache: { enable: true },
+    });
+
+    const patient1 = { resourceType: 'Patient', id: '123', name: [{ family: 'Doe' }] };
+    const patient2 = { resourceType: 'Patient', id: '123', name: [{ family: 'Smith' }] };
+
+    mockedAxios.request
+      .mockResolvedValueOnce({ data: patient1 })
+      .mockResolvedValueOnce({ data: patient2 });
+
+    // First call - should cache
+    const result1 = await clientWithCache.read('Patient', '123');
+    expect(result1).toBe(patient1);
+
+    // Second call with noCache - should bypass cache and get fresh data
+    const result2 = await clientWithCache.read('Patient', '123', { noCache: true });
+    expect(result2).toBe(patient2);
+    expect(mockedAxios.request).toHaveBeenCalledTimes(2);
+  });
+
   test('should not cache non-GET requests', async () => {
     const clientWithCache = new FhirClient({
       baseUrl: 'http://example.com/fhir',

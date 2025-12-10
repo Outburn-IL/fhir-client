@@ -88,11 +88,15 @@ export class FhirClient {
   async read<T extends Resource = Resource>(
     resourceType: string,
     id: string,
+    options?: { noCache?: boolean },
   ): Promise<T> {
-    return this.request<T>({
-      method: 'GET',
-      url: `${resourceType}/${id}`,
-    });
+    return this.request<T>(
+      {
+        method: 'GET',
+        url: `${resourceType}/${id}`,
+      },
+      options?.noCache,
+    );
   }
 
   async getCapabilities(): Promise<CapabilityStatement> {

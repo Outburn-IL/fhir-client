@@ -45,6 +45,9 @@ const client = new FhirClient({
 ```typescript
 const patient = await client.read('Patient', '123');
 console.log(patient);
+
+// Bypass cache and fetch fresh data from server
+const freshPatient = await client.read('Patient', '123', { noCache: true });
 ```
 
 ### Get Capabilities
