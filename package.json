@@ -1,6 +1,6 @@
 {
   "name": "@outburn/fhir-client",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "A modern, lightweight FHIR client for TypeScript/JavaScript with support for R3, R4, and R5.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
