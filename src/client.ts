@@ -287,7 +287,7 @@ export class FhirClient {
 
       if (results.length > maxResults) {
         throw new Error(
-          `Maximum result limit (${maxResults}) exceeded. Use pagination or increase maxFetchAllResults config.`,
+          `Maximum result limit (${maxResults}) exceeded. Narrow down your search or increase maxFetchAllResults.`,
         );
       }
     }
