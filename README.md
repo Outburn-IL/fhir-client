@@ -65,8 +65,11 @@ const bundle = await client.search('Patient', { name: 'John' });
 // Search with query string
 const bundle2 = await client.search('Patient?active=true', { name: 'John' });
 
-// Fetch all pages
+// Fetch all pages (with safeguard to prevent OOM)
 const allPatients = await client.search('Patient', { active: true }, { fetchAll: true });
+
+// Override the default max limit for this search
+const manyPatients = await client.search('Patient', {}, { fetchAll: true, maxResults: 50000 });
 ```
 
 ### Create
@@ -172,6 +175,23 @@ const client = new FhirClient({
 ```
 
 If a request takes longer than the specified timeout, it will be aborted and throw an error. You can customize this value based on your server's expected response times.
+
+### Fetch All Results Limit
+
+To prevent out-of-memory (OOM) errors when using `fetchAll: true`, the client enforces a maximum limit on the number of resources that can be fetched:
+
+```typescript
+const client = new FhirClient({
+  baseUrl: 'https://hapi.fhir.org/baseR4',
+  fhirVersion: 'R4',
+  maxFetchAllResults: 10000, // Default: 10000 resources
+});
+```
+
+When the limit is exceeded, an error is thrown. You can:
+- Increase `maxFetchAllResults` in the client configuration (applies to all searches)
+- Override the limit per-search using the `maxResults` option (see Search examples above)
+- Use regular pagination instead of `fetchAll` for very large result sets
 
 ## Caching
 The FHIR client includes built-in caching using an LRU (Least Recently Used) cache. Caching significantly improves performance by storing responses from GET requests and reusing them for identical subsequent requests.

@@ -24,6 +24,7 @@ export interface FhirClientConfig {
     max?: number; // Max items
     ttl?: number; // Time to live in ms
   };
+  maxFetchAllResults?: number; // Maximum number of resources to fetch when using fetchAll (default: 10000)
 }
 
 export interface SearchParams {

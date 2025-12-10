@@ -512,6 +512,71 @@ describe('FhirClient', () => {
     ).rejects.toThrow('Network error');
   });
 
+  test('should throw error when fetchAll exceeds maxResults config', async () => {
+    const clientWithLimit = new FhirClient({
+      baseUrl: 'http://example.com/fhir',
+      fhirVersion: 'R4',
+      maxFetchAllResults: 5,
+    });
+
+    const bundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: Array.from({ length: 10 }, (_, i) => ({
+        resource: { resourceType: 'Patient', id: `${i + 1}` },
+      })),
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+    await expect(
+      clientWithLimit.search('Patient', {}, { fetchAll: true })
+    ).rejects.toThrow('Maximum result limit (5) exceeded');
+  });
+
+  test('should throw error when fetchAll exceeds maxResults option', async () => {
+    const bundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: Array.from({ length: 10 }, (_, i) => ({
+        resource: { resourceType: 'Patient', id: `${i + 1}` },
+      })),
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+    await expect(
+      client.search('Patient', {}, { fetchAll: true, maxResults: 5 })
+    ).rejects.toThrow('Maximum result limit (5) exceeded');
+  });
+
+  test('should throw error when pagination exceeds maxResults', async () => {
+    const bundle1: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      link: [{ relation: 'next', url: 'http://example.com/fhir/Patient?page=2' }],
+      entry: Array.from({ length: 5 }, (_, i) => ({
+        resource: { resourceType: 'Patient', id: `${i + 1}` },
+      })),
+    };
+
+    const bundle2: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: Array.from({ length: 5 }, (_, i) => ({
+        resource: { resourceType: 'Patient', id: `${i + 6}` },
+      })),
+    };
+
+    mockedAxios.request
+      .mockResolvedValueOnce({ data: bundle1 })
+      .mockResolvedValueOnce({ data: bundle2 });
+
+    await expect(
+      client.search('Patient', {}, { fetchAll: true, maxResults: 8 })
+    ).rejects.toThrow('Maximum result limit (8) exceeded');
+  });
+
   test('should handle FHIR version R3', () => {
     new FhirClient({
       baseUrl: 'http://example.com/fhir',

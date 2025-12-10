@@ -172,7 +172,7 @@ export class FhirClient {
   async search<T extends Resource = Resource>(
     resourceTypeOrQuery: string,
     params?: SearchParams,
-    options?: { fetchAll?: boolean },
+    options?: { fetchAll?: boolean; maxResults?: number },
   ): Promise<Bundle<T> | T[]> {
     let url = resourceTypeOrQuery;
     let searchParams: Record<string, string | number | boolean | (string | number | boolean)[]> = {};
@@ -194,7 +194,8 @@ export class FhirClient {
     });
 
     if (options?.fetchAll) {
-      return this.fetchAllPages(response);
+      const maxResults = options.maxResults ?? this.config.maxFetchAllResults ?? 10000;
+      return this.fetchAllPages(response, maxResults);
     }
 
     return response;
@@ -202,6 +203,7 @@ export class FhirClient {
 
   private async fetchAllPages<T extends Resource>(
     initialBundle: Bundle<T>,
+    maxResults: number,
   ): Promise<T[]> {
     const results: T[] = [];
     let currentBundle = initialBundle;
@@ -211,6 +213,12 @@ export class FhirClient {
         ...currentBundle.entry
           .map((e) => e.resource)
           .filter((r): r is T => !!r),
+      );
+    }
+
+    if (results.length > maxResults) {
+      throw new Error(
+        `Maximum result limit (${maxResults}) exceeded. Narrow down your search or increase maxFetchAllResults.`,
       );
     }
 
@@ -233,6 +241,12 @@ export class FhirClient {
           ...currentBundle.entry
             .map((e) => e.resource)
             .filter((r): r is T => !!r),
+        );
+      }
+
+      if (results.length > maxResults) {
+        throw new Error(
+          `Maximum result limit (${maxResults}) exceeded. Use pagination or increase maxFetchAllResults config.`,
         );
       }
     }
