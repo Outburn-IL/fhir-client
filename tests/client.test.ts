@@ -495,7 +495,7 @@ describe('FhirClient', () => {
     expect(mockedAxios.request).toHaveBeenCalledTimes(1);
   });
 
-  test('should handle pagination errors gracefully', async () => {
+  test('should throw error when pagination fails', async () => {
     const bundle1: Bundle = {
       resourceType: 'Bundle',
       type: 'searchset',
@@ -507,17 +507,9 @@ describe('FhirClient', () => {
       .mockResolvedValueOnce({ data: bundle1 })
       .mockRejectedValueOnce(new Error('Network error'));
 
-    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
-
-    const results = await client.search('Patient', {}, { fetchAll: true });
-
-    expect(results).toHaveLength(1);
-    expect(consoleWarnSpy).toHaveBeenCalledWith(
-      'Failed to fetch next page',
-      expect.any(Error),
-    );
-
-    consoleWarnSpy.mockRestore();
+    await expect(
+      client.search('Patient', {}, { fetchAll: true })
+    ).rejects.toThrow('Network error');
   });
 
   test('should handle FHIR version R3', () => {

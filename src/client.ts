@@ -220,45 +220,20 @@ export class FhirClient {
     ) {
       const nextLink = currentBundle.link.find((l) => l.relation === 'next');
       if (!nextLink || !nextLink.url) break;
-
-      // We need to handle the next link. It might be a full URL or relative.
-      // Axios handles full URLs in request config 'url' if it overrides baseURL?
-      // Actually, if we pass a full URL to axios with a baseURL set, axios might behave differently depending on implementation.
-      // But usually, if the URL is absolute, axios uses it.
       
-      // However, we need to be careful about authentication and headers.
-      // The `request` method uses `this.client` which has the baseURL and headers.
-      // If we pass a full URL, we should ensure it works.
+      const nextUrl = nextLink.url;
       
-      try {
-        // We use the raw client to avoid double-processing headers if they are already in the client config,
-        // but we need to ensure we use the `request` wrapper for caching if we want caching on pages (maybe not needed for fetchAll).
-        // But `request` wrapper adds Content-Type which is not needed for GET, but it also handles caching.
-        // Let's use `request` but we need to handle the URL correctly.
-        
-        // If nextLink.url is absolute, we can pass it.
-        // But we need to strip the baseURL if we want to use the same client instance cleanly, OR just pass the full URL.
-        
-        const nextUrl = nextLink.url;
-        
-        // If we use this.request, we need to pass the config.
-        // If nextUrl is absolute, we can set it as url.
-        
-        currentBundle = await this.request<Bundle<T>>({
-          method: 'GET',
-          url: nextUrl,
-        });
+      currentBundle = await this.request<Bundle<T>>({
+        method: 'GET',
+        url: nextUrl,
+      });
 
-        if (currentBundle.entry) {
-          results.push(
-            ...currentBundle.entry
-              .map((e) => e.resource)
-              .filter((r): r is T => !!r),
-          );
-        }
-      } catch (e) {
-        console.warn('Failed to fetch next page', e);
-        break;
+      if (currentBundle.entry) {
+        results.push(
+          ...currentBundle.entry
+            .map((e) => e.resource)
+            .filter((r): r is T => !!r),
+        );
       }
     }
 
