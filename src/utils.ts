@@ -28,11 +28,12 @@ export function mergeSearchParams(
 
   // Add params from query string
   urlParams.forEach((value: string, key: string) => {
-    if (merged[key]) {
-      if (Array.isArray(merged[key])) {
-        merged[key].push(value);
+    const existing = merged[key];
+    if (existing !== undefined) {
+      if (Array.isArray(existing)) {
+        existing.push(value);
       } else {
-        merged[key] = [merged[key], value];
+        merged[key] = [existing, value];
       }
     } else {
       merged[key] = value;
@@ -42,18 +43,19 @@ export function mergeSearchParams(
   // Add explicit params
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
-      if (merged[key]) {
-        if (Array.isArray(merged[key])) {
+      const existing = merged[key];
+      if (existing !== undefined) {
+        if (Array.isArray(existing)) {
           if (Array.isArray(value)) {
-            merged[key].push(...value);
+            existing.push(...value);
           } else {
-            merged[key].push(value);
+            existing.push(value);
           }
         } else {
           if (Array.isArray(value)) {
-            merged[key] = [merged[key], ...value];
+            merged[key] = [existing, ...value];
           } else {
-            merged[key] = [merged[key], value];
+            merged[key] = [existing, value];
           }
         }
       } else {

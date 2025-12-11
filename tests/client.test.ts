@@ -940,6 +940,61 @@ describe('FhirClient', () => {
       // Verify the search was called (implementation details of how are internal)
       expect(mockedAxios.request).toHaveBeenCalled();
     });
+
+    test('should handle query string in resourceTypeOrQuery parameter', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [
+          {
+            resource: { resourceType: 'Practitioner', id: 'prac123', identifier: [{ value: '9999958892' }] },
+            search: { mode: 'match' },
+          },
+        ],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      const literal = await client.toLiteral('Practitioner?identifier=9999958892');
+
+      expect(literal).toBe('Practitioner/prac123');
+      const callArgs = mockedAxios.request.mock.calls[mockedAxios.request.mock.calls.length - 1][0];
+      expect(callArgs.method).toBe('GET');
+      expect(callArgs.url).toBe('Practitioner?identifier=9999958892');
+    });
+
+    test('should handle query string vs params object equivalently', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [
+          {
+            resource: { resourceType: 'Practitioner', id: 'prac456', identifier: [{ value: '1234567890' }] },
+            search: { mode: 'match' },
+          },
+        ],
+      };
+
+      // First call with query string
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+      const literal1 = await client.toLiteral('Practitioner?identifier=1234567890');
+      const callArgs1 = mockedAxios.request.mock.calls[mockedAxios.request.mock.calls.length - 1][0];
+
+      // Second call with params object
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+      const literal2 = await client.toLiteral('Practitioner', { identifier: '1234567890' });
+      const callArgs2 = mockedAxios.request.mock.calls[mockedAxios.request.mock.calls.length - 1][0];
+
+      // Both should return the same literal
+      expect(literal1).toBe('Practitioner/prac456');
+      expect(literal2).toBe('Practitioner/prac456');
+
+      // Both should make the same HTTP request
+      expect(callArgs1.method).toBe('GET');
+      expect(callArgs2.method).toBe('GET');
+      expect(callArgs1.url).toBe('Practitioner?identifier=1234567890');
+      expect(callArgs2.url).toBe('Practitioner?identifier=1234567890');
+    });
   });
 
   describe('resourceId', () => {

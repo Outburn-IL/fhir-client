@@ -134,4 +134,11 @@ describe('mergeSearchParams', () => {
       name: ['John', 'Jane', 'Bob'],
     });
   });
+
+  test('should parse identifier query string correctly', () => {
+    const result = mergeSearchParams('identifier=9999958892', undefined);
+    expect(result).toEqual({
+      identifier: '9999958892',
+    });
+  });
 });
