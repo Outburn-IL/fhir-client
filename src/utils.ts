@@ -1,15 +1,20 @@
-import { FhirVersion } from './types';
+import { FhirVersion } from '@outburn/types';
 
 export function normalizeFhirVersion(version: FhirVersion): string {
   switch (version) {
-    case '3.0.1':
+    case '3.0.2':
     case '3.0':
     case 'R3':
+    case 'STU3':
       return '3.0';
     case '4.0.1':
     case '4.0':
     case 'R4':
       return '4.0';
+    case '4.3.0':
+    case '4.3':
+    case 'R4B':
+      return '4.3';
     case '5.0.0':
     case '5.0':
     case 'R5':

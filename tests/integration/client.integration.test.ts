@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { FhirClient } from '../../src/client';
-import { Bundle, CapabilityStatement, Resource, JsonValue } from '../../src/types';
+import { Bundle, CapabilityStatement, Resource } from '@outburn/types';
 
 const FHIR_BASE_URL = 'http://localhost:8080/fhir';
 

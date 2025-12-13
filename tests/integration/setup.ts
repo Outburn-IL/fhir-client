@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { upAll } from 'docker-compose';
 import * as path from 'path';
 import axios from 'axios';

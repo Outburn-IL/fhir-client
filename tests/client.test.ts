@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from 'axios';
 import { FhirClient } from '../src/client';
-import { Bundle } from '../src/types';
+import { Bundle } from '@outburn/types';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -774,10 +774,10 @@ describe('FhirClient', () => {
     );
   });
 
-  test('should handle FHIR version 3.0.1', () => {
+  test('should handle FHIR version 3.0.2', () => {
     new FhirClient({
       baseUrl: 'http://example.com/fhir',
-      fhirVersion: '3.0.1',
+      fhirVersion: '3.0.2',
     });
 
     expect(mockedAxios.create).toHaveBeenCalledWith(
