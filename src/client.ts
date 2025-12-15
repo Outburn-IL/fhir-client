@@ -88,6 +88,10 @@ export class FhirClient {
     return response.data;
   }
 
+  getBaseUrl(): string {
+    return this.config.baseUrl;
+  }
+
   async read<T extends Resource = Resource>(
     resourceType: string,
     id: string,
