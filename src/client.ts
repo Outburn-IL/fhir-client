@@ -3,9 +3,12 @@ import { LRUCache } from 'lru-cache';
 import {
   Bundle,
   CapabilityStatement,
-  FhirClientConfig,
   Resource,
+} from '@outburn/types';
+import {
+  FhirClientConfig,
   SearchParams,
+  SearchOptions,
 } from './types';
 import { mergeSearchParams, normalizeFhirVersion } from './utils';
 
@@ -83,6 +86,10 @@ export class FhirClient {
     }
 
     return response.data;
+  }
+
+  getBaseUrl(): string {
+    return this.config.baseUrl;
   }
 
   async read<T extends Resource = Resource>(
@@ -181,12 +188,7 @@ export class FhirClient {
   async search<T extends Resource = Resource>(
     resourceTypeOrQuery: string,
     params?: SearchParams,
-    options?: {
-      fetchAll?: boolean;
-      maxResults?: number;
-      asPost?: boolean;
-      noCache?: boolean;
-    },
+    options?: SearchOptions,
   ): Promise<Bundle<T> | T[]> {
     let url = resourceTypeOrQuery;
     let searchParams: Record<string, string | number | boolean | (string | number | boolean)[]> = {};
@@ -321,7 +323,7 @@ export class FhirClient {
   async toLiteral(
     resourceTypeOrQuery: string,
     params?: SearchParams,
-    options?: { asPost?: boolean; noCache?: boolean },
+    options?: Pick<SearchOptions, 'asPost' | 'noCache'>,
   ): Promise<string> {
     const bundle = await this.search<Resource>(
       resourceTypeOrQuery,
@@ -353,7 +355,7 @@ export class FhirClient {
   async resourceId(
     resourceTypeOrQuery: string,
     params?: SearchParams,
-    options?: { asPost?: boolean; noCache?: boolean },
+    options?: Pick<SearchOptions, 'asPost' | 'noCache'>,
   ): Promise<string> {
     const literal = await this.toLiteral(resourceTypeOrQuery, params, options);
     const id = literal.split('/')[1];
@@ -363,7 +365,7 @@ export class FhirClient {
   async resolve<T extends Resource = Resource>(
     literalOrQuery: string,
     params?: SearchParams,
-    options?: { asPost?: boolean; noCache?: boolean },
+    options?: Pick<SearchOptions, 'asPost' | 'noCache'>,
   ): Promise<T> {
     // Check if it's a literal reference (resourceType/id format)
     const literalPattern = /^[A-Z][a-zA-Z]+\/[A-Za-z0-9-.]+$/;

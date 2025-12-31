@@ -9,8 +9,12 @@ describe('normalizeFhirVersion', () => {
     expect(normalizeFhirVersion('3.0')).toBe('3.0');
   });
 
-  test('should normalize 3.0.1 to 3.0', () => {
-    expect(normalizeFhirVersion('3.0.1')).toBe('3.0');
+  test('should normalize 3.0.2 to 3.0', () => {
+    expect(normalizeFhirVersion('3.0.2')).toBe('3.0');
+  });
+
+  test('should normalize STU3 to 3.0', () => {
+    expect(normalizeFhirVersion('STU3')).toBe('3.0');
   });
 
   test('should normalize R4 to 4.0', () => {
@@ -23,6 +27,18 @@ describe('normalizeFhirVersion', () => {
 
   test('should normalize 4.0.1 to 4.0', () => {
     expect(normalizeFhirVersion('4.0.1')).toBe('4.0');
+  });
+
+  test('should normalize 4.3.0 to 4.3', () => {
+    expect(normalizeFhirVersion('4.3.0')).toBe('4.3');
+  });
+
+  test('should normalize 4.3 to 4.3', () => {
+    expect(normalizeFhirVersion('4.3')).toBe('4.3');
+  });
+
+  test('should normalize R4B to 4.3', () => {
+    expect(normalizeFhirVersion('R4B')).toBe('4.3');
   });
 
   test('should normalize R5 to 5.0', () => {

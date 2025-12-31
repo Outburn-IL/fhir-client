@@ -59,6 +59,14 @@ console.log(capabilities.fhirVersion);
 console.log(capabilities.format);
 ```
 
+### Get Base URL
+
+```typescript
+// Get the configured server base URL
+const baseUrl = client.getBaseUrl();
+console.log(baseUrl); // "https://hapi.fhir.org/baseR4"
+```
+
 ### Search
 
 ```typescript
