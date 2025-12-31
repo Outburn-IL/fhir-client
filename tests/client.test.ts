@@ -12,7 +12,7 @@ describe('FhirClient', () => {
   beforeEach(() => {
     mockedAxios.create.mockReturnThis();
     mockedAxios.request.mockResolvedValue({ data: {} });
-    
+
     client = new FhirClient({
       baseUrl: 'http://example.com/fhir',
       fhirVersion: 'R4',
@@ -21,6 +21,10 @@ describe('FhirClient', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  test('getBaseUrl should return the configured baseUrl', () => {
+    expect(client.getBaseUrl()).toBe('http://example.com/fhir');
   });
 
   test('read should make a GET request', async () => {
@@ -76,7 +80,7 @@ describe('FhirClient', () => {
         url: expect.stringContaining('Patient?'),
       }),
     );
-    
+
     const callUrl = mockedAxios.request.mock.calls[0][0].url;
     expect(callUrl).toContain('name=john');
     expect(callUrl).toContain('active=true');
@@ -181,7 +185,7 @@ describe('FhirClient', () => {
     };
 
     await expect(client.processTransaction(notABundle)).rejects.toThrow(
-      "processTransaction requires a Bundle resource, got Patient",
+      'processTransaction requires a Bundle resource, got Patient',
     );
   });
 
@@ -277,7 +281,7 @@ describe('FhirClient', () => {
     };
 
     await expect(client.processBatch(notABundle)).rejects.toThrow(
-      "processBatch requires a Bundle resource, got Patient",
+      'processBatch requires a Bundle resource, got Patient',
     );
   });
 
@@ -327,7 +331,7 @@ describe('FhirClient', () => {
     const patient = { id: '123', active: true } as any;
 
     await expect(client.update(patient)).rejects.toThrow(
-      'Resource must have a resourceType property'
+      'Resource must have a resourceType property',
     );
   });
 
@@ -335,7 +339,7 @@ describe('FhirClient', () => {
     const patient = { resourceType: 'Patient', active: true } as any;
 
     await expect(client.update(patient)).rejects.toThrow(
-      'Resource must have an id property for update operation'
+      'Resource must have an id property for update operation',
     );
   });
 
@@ -546,9 +550,7 @@ describe('FhirClient', () => {
       .mockResolvedValueOnce({ data: bundle1 })
       .mockRejectedValueOnce(new Error('Network error'));
 
-    await expect(
-      client.search('Patient', {}, { fetchAll: true })
-    ).rejects.toThrow('Network error');
+    await expect(client.search('Patient', {}, { fetchAll: true })).rejects.toThrow('Network error');
   });
 
   test('should throw error when fetchAll exceeds maxResults config', async () => {
@@ -568,9 +570,9 @@ describe('FhirClient', () => {
 
     mockedAxios.request.mockResolvedValueOnce({ data: bundle });
 
-    await expect(
-      clientWithLimit.search('Patient', {}, { fetchAll: true })
-    ).rejects.toThrow('Maximum result limit (5) exceeded');
+    await expect(clientWithLimit.search('Patient', {}, { fetchAll: true })).rejects.toThrow(
+      'Maximum result limit (5) exceeded',
+    );
   });
 
   test('should throw error when fetchAll exceeds maxResults option', async () => {
@@ -584,9 +586,9 @@ describe('FhirClient', () => {
 
     mockedAxios.request.mockResolvedValueOnce({ data: bundle });
 
-    await expect(
-      client.search('Patient', {}, { fetchAll: true, maxResults: 5 })
-    ).rejects.toThrow('Maximum result limit (5) exceeded');
+    await expect(client.search('Patient', {}, { fetchAll: true, maxResults: 5 })).rejects.toThrow(
+      'Maximum result limit (5) exceeded',
+    );
   });
 
   test('should throw error when pagination exceeds maxResults', async () => {
@@ -611,9 +613,9 @@ describe('FhirClient', () => {
       .mockResolvedValueOnce({ data: bundle1 })
       .mockResolvedValueOnce({ data: bundle2 });
 
-    await expect(
-      client.search('Patient', {}, { fetchAll: true, maxResults: 8 })
-    ).rejects.toThrow('Maximum result limit (8) exceeded');
+    await expect(client.search('Patient', {}, { fetchAll: true, maxResults: 8 })).rejects.toThrow(
+      'Maximum result limit (8) exceeded',
+    );
   });
 
   test('should use POST with _search endpoint when asPost is true', async () => {
@@ -635,7 +637,7 @@ describe('FhirClient', () => {
           'Content-Type': 'application/x-www-form-urlencoded',
         }),
         data: expect.stringContaining('name=John'),
-      })
+      }),
     );
   });
 
@@ -654,7 +656,7 @@ describe('FhirClient', () => {
       expect.objectContaining({
         method: 'POST',
         url: 'Patient/_search',
-      })
+      }),
     );
   });
 
@@ -667,7 +669,14 @@ describe('FhirClient', () => {
 
     mockedAxios.request.mockResolvedValueOnce({ data: bundle });
 
-    await client.search('Patient', { identifier: ['http://hospital.org/mrn|123', 'http://national-id.gov/ssn|456'], active: true }, { asPost: true });
+    await client.search(
+      'Patient',
+      {
+        identifier: ['http://hospital.org/mrn|123', 'http://national-id.gov/ssn|456'],
+        active: true,
+      },
+      { asPost: true },
+    );
 
     expect(mockedAxios.request).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -677,13 +686,17 @@ describe('FhirClient', () => {
           'Content-Type': 'application/x-www-form-urlencoded',
         }),
         // Should contain multiple identifier parameters, not a comma-separated string
-        data: expect.stringMatching(/identifier=http%3A%2F%2Fhospital.*identifier=http%3A%2F%2Fnational|identifier=http%3A%2F%2Fnational.*identifier=http%3A%2F%2Fhospital/),
-      })
+        data: expect.stringMatching(
+          /identifier=http%3A%2F%2Fhospital.*identifier=http%3A%2F%2Fnational|identifier=http%3A%2F%2Fnational.*identifier=http%3A%2F%2Fhospital/,
+        ),
+      }),
     );
-    
+
     // Verify it doesn't use comma-separated format
     const callData = mockedAxios.request.mock.calls[0][0].data;
-    expect(callData).not.toContain('identifier=http://hospital.org/mrn|123,http://national-id.gov/ssn|456');
+    expect(callData).not.toContain(
+      'identifier=http://hospital.org/mrn|123,http://national-id.gov/ssn|456',
+    );
   });
 
   test('should handle array values in GET search parameters', async () => {
@@ -695,20 +708,27 @@ describe('FhirClient', () => {
 
     mockedAxios.request.mockResolvedValueOnce({ data: bundle });
 
-    await client.search('Patient', { identifier: ['http://hospital.org/mrn|123', 'http://national-id.gov/ssn|456'], active: true });
+    await client.search('Patient', {
+      identifier: ['http://hospital.org/mrn|123', 'http://national-id.gov/ssn|456'],
+      active: true,
+    });
 
     expect(mockedAxios.request).toHaveBeenCalledWith(
       expect.objectContaining({
         method: 'GET',
         // URL should contain multiple identifier parameters
-        url: expect.stringMatching(/\?.*identifier=http%3A%2F%2Fhospital.*identifier=http%3A%2F%2Fnational|identifier=http%3A%2F%2Fnational.*identifier=http%3A%2F%2Fhospital/),
-      })
+        url: expect.stringMatching(
+          /\?.*identifier=http%3A%2F%2Fhospital.*identifier=http%3A%2F%2Fnational|identifier=http%3A%2F%2Fnational.*identifier=http%3A%2F%2Fhospital/,
+        ),
+      }),
     );
-    
+
     // Verify it doesn't use bracket notation or comma-separated format
     const callUrl = mockedAxios.request.mock.calls[0][0].url;
     expect(callUrl).not.toContain('identifier[]=');
-    expect(callUrl).not.toContain('identifier=http://hospital.org/mrn|123,http://national-id.gov/ssn|456');
+    expect(callUrl).not.toContain(
+      'identifier=http://hospital.org/mrn|123,http://national-id.gov/ssn|456',
+    );
   });
 
   test('should bypass cache when noCache is true', async () => {
@@ -848,7 +868,7 @@ describe('FhirClient', () => {
       mockedAxios.request.mockResolvedValueOnce({ data: bundle });
 
       await expect(client.toLiteral('Patient', { name: 'Unknown' })).rejects.toThrow(
-        'Search returned no match'
+        'Search returned no match',
       );
     });
 
@@ -865,7 +885,7 @@ describe('FhirClient', () => {
       mockedAxios.request.mockResolvedValueOnce({ data: bundle });
 
       await expect(client.toLiteral('Patient', { name: 'Doe' })).rejects.toThrow(
-        'Search returned multiple matches (2), criteria not selective enough'
+        'Search returned multiple matches (2), criteria not selective enough',
       );
     });
 
@@ -902,7 +922,7 @@ describe('FhirClient', () => {
       mockedAxios.request.mockResolvedValueOnce({ data: bundle });
 
       await expect(client.toLiteral('Patient', { name: 'Doe' })).rejects.toThrow(
-        'Server returned malformed resource without resourceType or id'
+        'Server returned malformed resource without resourceType or id',
       );
     });
 
@@ -934,7 +954,11 @@ describe('FhirClient', () => {
 
       mockedAxios.request.mockResolvedValueOnce({ data: bundle });
 
-      const result = await client.toLiteral('Patient', { name: 'Doe' }, { asPost: true, noCache: true });
+      const result = await client.toLiteral(
+        'Patient',
+        { name: 'Doe' },
+        { asPost: true, noCache: true },
+      );
 
       expect(result).toBe('Patient/123');
       // Verify the search was called (implementation details of how are internal)
@@ -947,7 +971,11 @@ describe('FhirClient', () => {
         type: 'searchset',
         entry: [
           {
-            resource: { resourceType: 'Practitioner', id: 'prac123', identifier: [{ value: '9999958892' }] },
+            resource: {
+              resourceType: 'Practitioner',
+              id: 'prac123',
+              identifier: [{ value: '9999958892' }],
+            },
             search: { mode: 'match' },
           },
         ],
@@ -969,7 +997,11 @@ describe('FhirClient', () => {
         type: 'searchset',
         entry: [
           {
-            resource: { resourceType: 'Practitioner', id: 'prac456', identifier: [{ value: '1234567890' }] },
+            resource: {
+              resourceType: 'Practitioner',
+              id: 'prac456',
+              identifier: [{ value: '1234567890' }],
+            },
             search: { mode: 'match' },
           },
         ],
@@ -978,12 +1010,14 @@ describe('FhirClient', () => {
       // First call with query string
       mockedAxios.request.mockResolvedValueOnce({ data: bundle });
       const literal1 = await client.toLiteral('Practitioner?identifier=1234567890');
-      const callArgs1 = mockedAxios.request.mock.calls[mockedAxios.request.mock.calls.length - 1][0];
+      const callArgs1 =
+        mockedAxios.request.mock.calls[mockedAxios.request.mock.calls.length - 1][0];
 
       // Second call with params object
       mockedAxios.request.mockResolvedValueOnce({ data: bundle });
       const literal2 = await client.toLiteral('Practitioner', { identifier: '1234567890' });
-      const callArgs2 = mockedAxios.request.mock.calls[mockedAxios.request.mock.calls.length - 1][0];
+      const callArgs2 =
+        mockedAxios.request.mock.calls[mockedAxios.request.mock.calls.length - 1][0];
 
       // Both should return the same literal
       expect(literal1).toBe('Practitioner/prac456');
@@ -1022,7 +1056,7 @@ describe('FhirClient', () => {
       mockedAxios.request.mockResolvedValueOnce({ data: bundle });
 
       await expect(client.resourceId('Patient', { name: 'Unknown' })).rejects.toThrow(
-        'Search returned no match'
+        'Search returned no match',
       );
     });
   });
@@ -1040,7 +1074,7 @@ describe('FhirClient', () => {
         expect.objectContaining({
           method: 'GET',
           url: 'Patient/123',
-        })
+        }),
       );
     });
 
@@ -1096,7 +1130,7 @@ describe('FhirClient', () => {
       mockedAxios.request.mockResolvedValueOnce({ data: bundle });
 
       await expect(client.resolve('Patient', { name: 'Test' })).rejects.toThrow(
-        'Server returned bundle entry without resource'
+        'Server returned bundle entry without resource',
       );
     });
 
@@ -1110,7 +1144,7 @@ describe('FhirClient', () => {
       mockedAxios.request.mockResolvedValueOnce({ data: bundle });
 
       await expect(client.resolve('Patient', { name: 'Unknown' })).rejects.toThrow(
-        'Search returned no match'
+        'Search returned no match',
       );
     });
 
@@ -1127,7 +1161,7 @@ describe('FhirClient', () => {
       mockedAxios.request.mockResolvedValueOnce({ data: bundle });
 
       await expect(client.resolve('Patient', { name: 'Doe' })).rejects.toThrow(
-        'Search returned multiple matches, criteria not selective enough'
+        'Search returned multiple matches, criteria not selective enough',
       );
     });
 
@@ -1143,7 +1177,7 @@ describe('FhirClient', () => {
         expect.objectContaining({
           method: 'GET',
           url: 'Patient/123',
-        })
+        }),
       );
     });
 
@@ -1159,7 +1193,7 @@ describe('FhirClient', () => {
         expect.objectContaining({
           method: 'GET',
           url: 'Patient/123',
-        })
+        }),
       );
     });
   });
