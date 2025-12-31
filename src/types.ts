@@ -1,4 +1,4 @@
-import { FhirVersion } from '@outburn/types'
+import { FhirVersion } from '@outburn/types';
 
 export interface FhirClientConfig {
   baseUrl: string;

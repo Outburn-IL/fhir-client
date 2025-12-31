@@ -30,11 +30,11 @@
   "bugs": "https://github.com/Outburn-IL/fhir-client/issues",
   "homepage": "https://github.com/Outburn-IL/fhir-client#readme",
   "dependencies": {
+    "@outburn/types": "^0.1.0",
     "axios": "^1.13.2",
     "lru-cache": "^11.2.4"
   },
   "devDependencies": {
-    "@outburn/types": "^0.1.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^20.19.27",
     "@typescript-eslint/eslint-plugin": "^8.51.0",
