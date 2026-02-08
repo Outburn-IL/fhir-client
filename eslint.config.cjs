@@ -15,6 +15,9 @@ module.exports = [
         ecmaVersion: 2020,
         sourceType: 'module',
       },
+      globals: {
+        URLSearchParams: 'readonly',
+      },
     },
     plugins: {
       '@typescript-eslint': tseslint,
