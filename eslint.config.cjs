@@ -1,6 +1,7 @@
 const js = require('@eslint/js');
 const tseslint = require('@typescript-eslint/eslint-plugin');
 const tsParser = require('@typescript-eslint/parser');
+const globals = require('globals');
 
 module.exports = [
   {
@@ -16,7 +17,7 @@ module.exports = [
         sourceType: 'module',
       },
       globals: {
-        URLSearchParams: 'readonly',
+        ...globals.node,
       },
     },
     plugins: {
@@ -26,6 +27,15 @@ module.exports = [
       ...tseslint.configs.recommended.rules,
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/no-explicit-any': 'warn',
+    },
+  },
+  {
+    files: ['**/*.test.ts', 'tests/**/*.ts'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.jest,
+      },
     },
   },
 ];
