@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from 'axios';
 import { FhirClient } from '../src/client';
+import { FhirClientError } from '../src/types';
 import { Bundle } from '@outburn/types';
 
 jest.mock('axios');
@@ -1195,6 +1196,372 @@ describe('FhirClient', () => {
           url: 'Patient/123',
         }),
       );
+    });
+  });
+
+  describe('readWithResponse', () => {
+    test('should return status 200 with parsed resource', async () => {
+      const patient = { resourceType: 'Patient', id: '123' };
+      mockedAxios.request.mockResolvedValueOnce({
+        status: 200,
+        data: patient,
+        headers: { 'content-type': 'application/fhir+json', etag: 'W/"1"' },
+      });
+
+      const resp = await client.readWithResponse('Patient', '123');
+
+      expect(resp.status).toBe(200);
+      expect(resp.resource).toEqual(patient);
+      expect(resp.headers).toBeDefined();
+    });
+
+    test('should return status 304 without throwing', async () => {
+      mockedAxios.request.mockResolvedValueOnce({
+        status: 304,
+        data: '',
+        headers: {},
+      });
+
+      const resp = await client.readWithResponse('Patient', '123', {
+        headers: { 'If-None-Match': 'W/"1"' },
+        noCache: true,
+      });
+
+      expect(resp.status).toBe(304);
+      expect(resp.resource).toBeUndefined();
+    });
+
+    test('should return status 404 without throwing', async () => {
+      mockedAxios.request.mockResolvedValueOnce({
+        status: 404,
+        data: { resourceType: 'OperationOutcome', issue: [] },
+        headers: {},
+      });
+
+      const resp = await client.readWithResponse('Patient', 'unknown');
+
+      expect(resp.status).toBe(404);
+      expect(resp.resource).toBeUndefined();
+    });
+
+    test('should return status 410 without throwing', async () => {
+      mockedAxios.request.mockResolvedValueOnce({
+        status: 410,
+        data: '',
+        headers: {},
+      });
+
+      const resp = await client.readWithResponse('Patient', 'deleted');
+
+      expect(resp.status).toBe(410);
+      expect(resp.resource).toBeUndefined();
+    });
+
+    test('should send custom headers', async () => {
+      const patient = { resourceType: 'Patient', id: '123' };
+      mockedAxios.request.mockResolvedValueOnce({
+        status: 200,
+        data: patient,
+        headers: {},
+      });
+
+      await client.readWithResponse('Patient', '123', {
+        headers: { 'If-None-Match': 'W/"2"', 'X-Custom': 'test' },
+        noCache: true,
+      });
+
+      expect(mockedAxios.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'If-None-Match': 'W/"2"',
+            'X-Custom': 'test',
+          }),
+        }),
+      );
+    });
+
+    test('should throw FhirClientError for 500', async () => {
+      const axiosError: any = new Error('Request failed');
+      axiosError.isAxiosError = true;
+      axiosError.response = {
+        status: 500,
+        data: { resourceType: 'OperationOutcome', issue: [{ severity: 'error' }] },
+        headers: { 'content-type': 'application/fhir+json' },
+      };
+
+      mockedAxios.request.mockRejectedValueOnce(axiosError);
+      // Need to mock axios.isAxiosError
+      (axios.isAxiosError as unknown as jest.Mock) = jest.fn().mockReturnValue(true);
+
+      try {
+        await client.readWithResponse('Patient', '123');
+        fail('expected error');
+      } catch (err) {
+        expect(err).toBeInstanceOf(FhirClientError);
+        const fhirErr = err as FhirClientError;
+        expect(fhirErr.status).toBe(500);
+        expect(fhirErr.operationOutcome).toBeDefined();
+        expect(fhirErr.request?.resourceType).toBe('Patient');
+        expect(fhirErr.request?.id).toBe('123');
+      }
+    });
+
+    test('should throw FhirClientError for 401', async () => {
+      const axiosError: any = new Error('Unauthorized');
+      axiosError.isAxiosError = true;
+      axiosError.response = {
+        status: 401,
+        data: {},
+        headers: {},
+      };
+
+      mockedAxios.request.mockRejectedValueOnce(axiosError);
+      (axios.isAxiosError as unknown as jest.Mock) = jest.fn().mockReturnValue(true);
+
+      try {
+        await client.readWithResponse('Patient', '123');
+        fail('expected error');
+      } catch (err) {
+        expect(err).toBeInstanceOf(FhirClientError);
+        expect((err as FhirClientError).status).toBe(401);
+      }
+    });
+
+    test('should extract response headers with lower-cased keys', async () => {
+      mockedAxios.request.mockResolvedValueOnce({
+        status: 200,
+        data: { resourceType: 'Patient', id: '123' },
+        headers: {
+          ETag: 'W/"5"',
+          'Content-Type': 'application/fhir+json',
+          'Last-Modified': 'Sun, 08 Feb 2026 01:02:03 GMT',
+        },
+      });
+
+      const resp = await client.readWithResponse('Patient', '123');
+
+      expect(resp.headers['etag']).toBe('W/"5"');
+      expect(resp.headers['content-type']).toBe('application/fhir+json');
+      expect(resp.headers['last-modified']).toBe('Sun, 08 Feb 2026 01:02:03 GMT');
+    });
+
+    test('should bypass cache when noCache is true', async () => {
+      const clientWithCache = new FhirClient({
+        baseUrl: 'http://example.com/fhir',
+        fhirVersion: 'R4',
+        cache: { enable: true },
+      });
+
+      const patient = { resourceType: 'Patient', id: '123' };
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 200, data: patient, headers: {} })
+        .mockResolvedValueOnce({ status: 200, data: { ...patient, active: true }, headers: {} });
+
+      const resp1 = await clientWithCache.readWithResponse('Patient', '123');
+      expect(resp1.resource).toEqual(patient);
+
+      const resp2 = await clientWithCache.readWithResponse('Patient', '123', { noCache: true });
+      expect(resp2.resource).toEqual({ ...patient, active: true });
+      expect(mockedAxios.request).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('conditionalRead', () => {
+    test('should send If-None-Match when versionId is provided', async () => {
+      mockedAxios.request.mockResolvedValueOnce({
+        status: 304,
+        data: '',
+        headers: {},
+      });
+
+      const resp = await client.conditionalRead('Patient', '123', {
+        versionId: '5',
+      });
+
+      expect(resp.status).toBe(304);
+      expect(mockedAxios.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'If-None-Match': 'W/"5"',
+          }),
+        }),
+      );
+    });
+
+    test('should send If-Modified-Since when lastUpdated is provided', async () => {
+      mockedAxios.request.mockResolvedValueOnce({
+        status: 304,
+        data: '',
+        headers: {},
+      });
+
+      const resp = await client.conditionalRead('Patient', '123', {
+        lastUpdated: '2026-02-08T01:02:03.456Z',
+      });
+
+      expect(resp.status).toBe(304);
+      expect(mockedAxios.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'If-Modified-Since': expect.stringContaining('GMT'),
+          }),
+        }),
+      );
+    });
+
+    test('should prefer versionId over lastUpdated', async () => {
+      mockedAxios.request.mockResolvedValueOnce({
+        status: 304,
+        data: '',
+        headers: {},
+      });
+
+      await client.conditionalRead('Patient', '123', {
+        versionId: '5',
+        lastUpdated: '2026-02-08T01:02:03.456Z',
+      });
+
+      const calledHeaders = mockedAxios.request.mock.calls[0][0].headers as
+        | Record<string, string>
+        | undefined;
+      expect(calledHeaders?.['If-None-Match']).toBe('W/"5"');
+      expect(calledHeaders?.['If-Modified-Since']).toBeUndefined();
+    });
+
+    test('should not send conditional headers when no condition is provided', async () => {
+      mockedAxios.request.mockResolvedValueOnce({
+        status: 200,
+        data: { resourceType: 'Patient', id: '123' },
+        headers: {},
+      });
+
+      await client.conditionalRead('Patient', '123', {});
+
+      const calledHeaders = mockedAxios.request.mock.calls[0][0].headers as
+        | Record<string, string>
+        | undefined;
+      expect(calledHeaders?.['If-None-Match']).toBeUndefined();
+      expect(calledHeaders?.['If-Modified-Since']).toBeUndefined();
+    });
+
+    test('should not send If-Modified-Since for invalid dates', async () => {
+      mockedAxios.request.mockResolvedValueOnce({
+        status: 200,
+        data: { resourceType: 'Patient', id: '123' },
+        headers: {},
+      });
+
+      await client.conditionalRead('Patient', '123', {
+        lastUpdated: 'not-a-valid-date',
+      });
+
+      const calledHeaders = mockedAxios.request.mock.calls[0][0].headers as
+        | Record<string, string>
+        | undefined;
+      expect(calledHeaders?.['If-Modified-Since']).toBeUndefined();
+    });
+
+    test('should support noCache option', async () => {
+      const clientWithCache = new FhirClient({
+        baseUrl: 'http://example.com/fhir',
+        fhirVersion: 'R4',
+        cache: { enable: true },
+      });
+
+      mockedAxios.request.mockResolvedValueOnce({
+        status: 200,
+        data: { resourceType: 'Patient', id: '123' },
+        headers: {},
+      });
+
+      await clientWithCache.conditionalRead(
+        'Patient',
+        '123',
+        { versionId: '1' },
+        { noCache: true },
+      );
+
+      // Should have been called (not served from cache)
+      expect(mockedAxios.request).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('read with custom headers', () => {
+    test('should pass per-request headers via read()', async () => {
+      mockedAxios.request.mockResolvedValueOnce({
+        data: { resourceType: 'Patient', id: '123' },
+      });
+
+      await client.read('Patient', '123', {
+        headers: { 'X-Request-Id': 'abc' },
+      });
+
+      expect(mockedAxios.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'X-Request-Id': 'abc',
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('search with _lastUpdated', () => {
+    test('should pass _lastUpdated parameter unchanged in GET search', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      await client.search('StructureMap', {
+        _lastUpdated: 'gt2026-02-08T01:02:03.456Z',
+      });
+
+      const callUrl = mockedAxios.request.mock.calls[0][0].url;
+      expect(callUrl).toContain('_lastUpdated=gt2026-02-08T01%3A02%3A03.456Z');
+    });
+
+    test('should pass _lastUpdated parameter unchanged in POST search', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      await client.search(
+        'StructureMap',
+        { _lastUpdated: 'gt2026-02-08T01:02:03.456Z' },
+        { asPost: true },
+      );
+
+      const callData = mockedAxios.request.mock.calls[0][0].data;
+      expect(callData).toContain('_lastUpdated=gt2026-02-08T01%3A02%3A03.456Z');
+    });
+
+    test('should pass params starting with _ through search unchanged', async () => {
+      const bundle: Bundle = {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: [],
+      };
+
+      mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+      await client.search('Patient', {
+        _count: 10,
+        _sort: '-_lastUpdated',
+        _include: 'Patient:organization',
+      });
+
+      const callUrl = mockedAxios.request.mock.calls[0][0].url;
+      expect(callUrl).toContain('_count=10');
+      expect(callUrl).toContain('_sort=-_lastUpdated');
+      expect(callUrl).toContain('_include=Patient%3Aorganization');
     });
   });
 });

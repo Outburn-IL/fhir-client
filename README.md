@@ -1,4 +1,5 @@
 # FHIR Client
+
 [![npm version](https://img.shields.io/npm/v/@outburn/fhir-client.svg)](https://www.npmjs.com/package/@outburn/fhir-client)
 
 A modern, lightweight FHIR client for TypeScript/JavaScript with support for R3, R4, and R5.
@@ -8,6 +9,9 @@ A modern, lightweight FHIR client for TypeScript/JavaScript with support for R3,
 - **Multi-version support**: R3, R4, R5.
 - **TypeScript**: Fully typed.
 - **Simple API**: `read`, `search`, `create`, `update`, `delete`.
+- **Conditional reads**: `readWithResponse` and `conditionalRead` for polling-friendly workflows.
+- **Response-aware API**: Inspect HTTP status codes & headers without catching exceptions.
+- **Per-request headers**: Send `If-None-Match`, `If-Modified-Since`, or any custom header.
 - **Pagination**: Automatically fetch all pages of search results.
 - **Caching**: Built-in configurable LRU caching.
 - **Auth**: Basic Auth support (extensible).
@@ -48,6 +52,105 @@ console.log(patient);
 
 // Bypass cache and fetch fresh data from server
 const freshPatient = await client.read('Patient', '123', { noCache: true });
+
+// Pass custom per-request headers
+const patientWithHeaders = await client.read('Patient', '123', {
+  noCache: true,
+  headers: { 'X-Request-Id': 'abc-123' },
+});
+```
+
+### Read with Response (Conditional Reads)
+
+`readWithResponse()` returns a `FhirResponse<T>` wrapper that exposes the HTTP status code, response headers, and (when present) the parsed resource body. It does **not** throw for `304 Not Modified`, `404 Not Found`, or `410 Gone`, making it ideal for polling and conditional-read workflows.
+
+```typescript
+import { FhirResponse } from '@outburn/fhir-client';
+
+// Basic usage
+const resp: FhirResponse<Patient> = await client.readWithResponse('Patient', '123');
+if (resp.status === 200 && resp.resource) {
+  console.log(resp.resource);
+}
+
+// Conditional read with If-None-Match (ETag)
+const resp = await client.readWithResponse('Patient', '123', {
+  noCache: true,
+  headers: { 'If-None-Match': 'W/"5"' },
+});
+if (resp.status === 304) {
+  console.log('Resource unchanged');
+}
+
+// Conditional read with If-Modified-Since
+const resp = await client.readWithResponse('Patient', '123', {
+  noCache: true,
+  headers: { 'If-Modified-Since': new Date('2026-01-01').toUTCString() },
+});
+if (resp.status === 304) {
+  console.log('Resource unchanged');
+}
+
+// Check for deleted resources
+if (resp.status === 404 || resp.status === 410) {
+  console.log('Resource deleted or not found');
+}
+```
+
+The `FhirResponse<T>` interface:
+
+```typescript
+interface FhirResponse<T> {
+  status: number; // HTTP status (200, 304, 404, 410, …)
+  headers: Record<string, string | undefined>; // Response headers (lower-cased keys)
+  resource?: T; // Parsed body (present for 200/201)
+}
+```
+
+### Conditional Read (Convenience Helper)
+
+`conditionalRead()` builds the appropriate conditional-read headers from cached resource metadata and delegates to `readWithResponse()`.
+
+```typescript
+// Using cached versionId → sends If-None-Match: W/"<versionId>"
+const resp = await client.conditionalRead('Patient', '123', {
+  versionId: resource.meta?.versionId,
+});
+
+// Using cached lastUpdated → sends If-Modified-Since (HTTP-date)
+const resp = await client.conditionalRead('Patient', '123', {
+  lastUpdated: resource.meta?.lastUpdated,
+});
+
+// Both provided → versionId takes precedence
+const resp = await client.conditionalRead('Patient', '123', {
+  versionId: '5',
+  lastUpdated: '2026-02-08T01:02:03.456Z',
+});
+
+// With noCache
+const resp = await client.conditionalRead(
+  'Patient',
+  '123',
+  {
+    versionId: '5',
+  },
+  { noCache: true },
+);
+
+// Handle the response
+switch (resp.status) {
+  case 200:
+    // Resource changed – update cache
+    break;
+  case 304:
+    // Unchanged – skip
+    break;
+  case 404:
+  case 410:
+    // Deleted – trigger refresh
+    break;
+}
 ```
 
 ### Get Capabilities
@@ -92,7 +195,7 @@ const freshData = await client.search('Patient', { _id: '123' }, { noCache: true
 const freshAllPatients = await client.search(
   'Patient',
   { active: true },
-  { fetchAll: true, noCache: true, asPost: true }
+  { fetchAll: true, noCache: true, asPost: true },
 );
 ```
 
@@ -195,6 +298,7 @@ await client.delete('Patient', '123');
 These methods help you find and work with single resources using search criteria. They automatically filter out informational entries (like `OperationOutcome` with `search.mode !== 'match'`) and only count actual resource matches.
 
 #### `toLiteral`
+
 Searches for a resource and returns its literal reference (`resourceType/id`). Throws an error if zero or multiple matches are found.
 
 ```typescript
@@ -207,6 +311,7 @@ console.log(ref); // "Patient/abc-123"
 ```
 
 #### `resourceId`
+
 Same as `toLiteral` but returns only the ID part.
 
 ```typescript
@@ -215,7 +320,9 @@ console.log(id); // "abc-123"
 ```
 
 #### `resolve`
+
 Hybrid method that can:
+
 - Read a resource using a literal reference: `resolve('Patient/123')`
 - Search for a single resource and return it: `resolve('Patient', { identifier: '...' })`
 
@@ -237,6 +344,7 @@ const patient3 = await client.resolve('Patient', { name: 'Doe' }, { noCache: tru
 The `search` method accepts an optional third parameter with the following options:
 
 ### `fetchAll`
+
 Automatically fetches all pages of results by following `next` links in the Bundle. Returns an array of resources instead of a Bundle.
 
 ```typescript
@@ -245,6 +353,7 @@ const allPatients = await client.search('Patient', { active: true }, { fetchAll:
 ```
 
 ### `maxResults`
+
 Maximum number of resources to fetch when using `fetchAll`. Overrides the client-level `maxFetchAllResults` config for this specific search.
 
 ```typescript
@@ -252,7 +361,9 @@ const patients = await client.search('Patient', {}, { fetchAll: true, maxResults
 ```
 
 ### `asPost`
+
 Use HTTP POST with `application/x-www-form-urlencoded` instead of GET. Useful when:
+
 - Query strings are too long for GET requests
 - Server requires POST for search operations
 - Working with servers that have URL length limitations
@@ -263,6 +374,7 @@ const results = await client.search('Patient', { name: 'John' }, { asPost: true 
 ```
 
 ### `noCache`
+
 Bypass the cache and fetch fresh data from the server, even if a cached response exists.
 
 ```typescript
@@ -300,11 +412,13 @@ const client = new FhirClient({
 ```
 
 When the limit is exceeded, an error is thrown. You can:
+
 - Increase `maxFetchAllResults` in the client configuration (applies to all searches)
 - Override the limit per-search using the `maxResults` option (see Search examples above)
 - Use regular pagination instead of `fetchAll` for very large result sets
 
 ## Caching
+
 The FHIR client includes built-in caching using an LRU (Least Recently Used) cache. Caching significantly improves performance by storing responses from GET requests and reusing them for identical subsequent requests.
 
 ### How It Works
@@ -345,6 +459,7 @@ const client = new FhirClient({
 ```
 
 **Defaults when `enable: true`**:
+
 - `max`: 100 items
 - `ttl`: 300000 ms (5 minutes)
 
@@ -358,8 +473,8 @@ const client = new FhirClient({
   fhirVersion: 'R4',
   cache: {
     enable: true,
-    max: 500,      // Store up to 500 items
-    ttl: 120000,   // Items expire after 120 seconds (2 minutes)
+    max: 500, // Store up to 500 items
+    ttl: 120000, // Items expire after 120 seconds (2 minutes)
   },
 });
 ```
@@ -375,7 +490,7 @@ const client = new FhirClient({
   cache: {
     enable: true,
     ttl: 10000, // 10 seconds
-    max: 50,    // Small cache for temporary use
+    max: 50, // Small cache for temporary use
   },
 });
 ```
@@ -390,8 +505,8 @@ const client = new FhirClient({
   fhirVersion: 'R4',
   cache: {
     enable: true,
-    ttl: 3600000,  // 1 hour
-    max: 1000,     // Large cache size
+    ttl: 3600000, // 1 hour
+    max: 1000, // Large cache size
   },
 });
 ```
@@ -424,8 +539,62 @@ const patient4 = await client.read('Patient', '456');
 
 // Mutations always hit the server (never cached)
 await client.update('Patient', '123', updatedPatient); // Always hits server
-await client.create('Patient', newPatient);            // Always hits server
-await client.delete('Patient', '789');                 // Always hits server
+await client.create('Patient', newPatient); // Always hits server
+await client.delete('Patient', '789'); // Always hits server
+```
+
+## Error Handling
+
+When `readWithResponse()` encounters a non-recoverable HTTP error (e.g. 401, 403, 500), it throws a `FhirClientError` with structured HTTP details:
+
+```typescript
+import { FhirClientError } from '@outburn/fhir-client';
+
+try {
+  const resp = await client.readWithResponse('Patient', '123');
+} catch (err) {
+  if (err instanceof FhirClientError) {
+    console.error(err.status); // e.g. 500
+    console.error(err.headers); // response headers
+    console.error(err.operationOutcome); // OperationOutcome body, if any
+    console.error(err.request); // { method, url, resourceType, id }
+  }
+}
+```
+
+The `FhirClientError` class:
+
+```typescript
+class FhirClientError extends Error {
+  status: number;
+  headers: Record<string, string | undefined>;
+  operationOutcome?: unknown;
+  request?: { method: string; url: string; resourceType?: string; id?: string };
+}
+```
+
+## Utility Helpers
+
+### `formatWeakEtag(versionId)`
+
+Formats a FHIR `meta.versionId` as a weak ETag for `If-None-Match` headers:
+
+```typescript
+import { formatWeakEtag } from '@outburn/fhir-client';
+
+formatWeakEtag('3'); // 'W/"3"'
+formatWeakEtag('abc-123'); // 'W/"abc-123"'
+```
+
+### `toHttpDate(isoString)`
+
+Converts a FHIR instant (ISO 8601) to an HTTP-date (RFC 7231) for `If-Modified-Since` headers. Returns `undefined` if parsing fails:
+
+```typescript
+import { toHttpDate } from '@outburn/fhir-client';
+
+toHttpDate('2026-02-08T01:02:03.456Z'); // 'Sun, 08 Feb 2026 01:02:03 GMT'
+toHttpDate('invalid'); // undefined
 ```
 
 ## Testing
@@ -447,6 +616,7 @@ Unit tests are located in `tests/` and provide comprehensive coverage of the cli
 Integration tests run against a real HAPI FHIR R4 server using Docker Compose. They verify the client works correctly with an actual FHIR server.
 
 **Prerequisites:**
+
 - Docker and Docker Compose installed and running
 - Port 8080 available
 
@@ -463,6 +633,7 @@ npm run test:all
 ```
 
 Integration tests cover:
+
 - Server metadata and capabilities
 - CRUD operations on Patient, Encounter, and Observation resources
 - Pagination with fetchAll (tests with 250+ resources)
@@ -508,6 +679,7 @@ npm run build
 ### Pre-commit Checklist
 
 Before committing, ensure:
+
 1. `npm run lint` passes with no errors
 2. `npm test` passes
 3. Code is formatted with Prettier
@@ -515,10 +687,12 @@ Before committing, ensure:
 The `prepublishOnly` script will automatically run linting and build before publishing.
 
 ## License
+
 MIT  
 © Outburn Ltd. 2022–2025. All Rights Reserved.
 
 ---
 
 ## Disclaimer
+
 This project is part of the [FUME](https://github.com/Outburn-IL/fume-community) open-source initiative and intended for use in FHIR tooling and development environments.
