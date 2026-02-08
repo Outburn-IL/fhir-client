@@ -1,22 +1,26 @@
 const js = require('@eslint/js');
-const tseslint = require('typescript-eslint');
+const tseslint = require('@typescript-eslint/eslint-plugin');
+const tsParser = require('@typescript-eslint/parser');
 
 module.exports = [
   {
     ignores: ['dist/**', 'coverage/**', 'node_modules/**'],
   },
   js.configs.recommended,
-  ...tseslint.configs.recommended,
   {
     files: ['**/*.ts'],
     languageOptions: {
-      parser: tseslint.parser,
+      parser: tsParser,
       parserOptions: {
         ecmaVersion: 2020,
         sourceType: 'module',
       },
     },
+    plugins: {
+      '@typescript-eslint': tseslint,
+    },
     rules: {
+      ...tseslint.configs.recommended.rules,
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/no-explicit-any': 'warn',
     },
