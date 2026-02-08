@@ -197,11 +197,13 @@ export class FhirClient {
     id: string,
     options?: ReadWithResponseOptions,
   ): Promise<FhirResponse<T>> {
+    const normalizedHeaders =
+      options?.headers && Object.keys(options.headers).length > 0 ? options.headers : undefined;
     return this.requestWithResponse<T>(
       {
         method: 'GET',
         url: `${resourceType}/${id}`,
-        headers: options?.headers,
+        headers: normalizedHeaders,
       },
       options?.noCache,
       { resourceType, id },
@@ -235,9 +237,11 @@ export class FhirClient {
       }
     }
 
+    const normalizedHeaders = Object.keys(headers).length > 0 ? headers : undefined;
+
     return this.readWithResponse<T>(resourceType, id, {
       noCache: options?.noCache,
-      headers,
+      headers: normalizedHeaders,
     });
   }
 
