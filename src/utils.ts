@@ -24,6 +24,29 @@ export function normalizeFhirVersion(version: FhirVersion): string {
   }
 }
 
+/**
+ * Format a FHIR `meta.versionId` as a weak ETag suitable for `If-None-Match`.
+ *
+ * @example formatWeakEtag('3') => 'W/"3"'
+ */
+export function formatWeakEtag(versionId: string): string {
+  return `W/"${versionId}"`;
+}
+
+/**
+ * Convert a FHIR instant / ISO-8601 string to an HTTP-date (RFC 7231) suitable
+ * for the `If-Modified-Since` header.
+ *
+ * Returns `undefined` if the input cannot be parsed into a valid date.
+ */
+export function toHttpDate(isoString: string): string | undefined {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.valueOf())) {
+    return undefined;
+  }
+  return date.toUTCString();
+}
+
 export function mergeSearchParams(
   query: string,
   params?: Record<string, string | number | boolean | (string | number | boolean)[]>,

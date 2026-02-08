@@ -1,4 +1,4 @@
-import { normalizeFhirVersion, mergeSearchParams } from '../src/utils';
+import { normalizeFhirVersion, mergeSearchParams, formatWeakEtag, toHttpDate } from '../src/utils';
 
 describe('normalizeFhirVersion', () => {
   test('should normalize R3 to 3.0', () => {
@@ -55,9 +55,7 @@ describe('normalizeFhirVersion', () => {
 
   test('should throw error for unsupported version', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(() => normalizeFhirVersion('2.0' as any)).toThrow(
-      'Unsupported FHIR version: 2.0',
-    );
+    expect(() => normalizeFhirVersion('2.0' as any)).toThrow('Unsupported FHIR version: 2.0');
   });
 });
 
@@ -156,5 +154,43 @@ describe('mergeSearchParams', () => {
     expect(result).toEqual({
       identifier: '9999958892',
     });
+  });
+});
+
+describe('formatWeakEtag', () => {
+  test('should format a numeric versionId as weak ETag', () => {
+    expect(formatWeakEtag('3')).toBe('W/"3"');
+  });
+
+  test('should format a string versionId as weak ETag', () => {
+    expect(formatWeakEtag('abc-123')).toBe('W/"abc-123"');
+  });
+
+  test('should handle empty string', () => {
+    expect(formatWeakEtag('')).toBe('W/""');
+  });
+});
+
+describe('toHttpDate', () => {
+  test('should convert a FHIR instant to HTTP-date', () => {
+    const result = toHttpDate('2026-02-08T01:02:03.456Z');
+    expect(result).toBeDefined();
+    // HTTP-date looks like "Sun, 08 Feb 2026 01:02:03 GMT"
+    expect(result).toContain('2026');
+    expect(result).toContain('GMT');
+  });
+
+  test('should convert an ISO date without time to HTTP-date', () => {
+    const result = toHttpDate('2026-02-08');
+    expect(result).toBeDefined();
+    expect(result).toContain('GMT');
+  });
+
+  test('should return undefined for invalid date', () => {
+    expect(toHttpDate('not-a-date')).toBeUndefined();
+  });
+
+  test('should return undefined for empty string', () => {
+    expect(toHttpDate('')).toBeUndefined();
   });
 });

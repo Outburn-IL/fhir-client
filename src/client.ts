@@ -1,16 +1,16 @@
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
 import { LRUCache } from 'lru-cache';
-import {
-  Bundle,
-  CapabilityStatement,
-  Resource,
-} from '@outburn/types';
+import { Bundle, CapabilityStatement, Resource } from '@outburn/types';
 import {
   FhirClientConfig,
+  FhirClientError,
+  FhirResponse,
+  ReadWithResponseOptions,
+  ConditionalReadCondition,
   SearchParams,
   SearchOptions,
 } from './types';
-import { mergeSearchParams, normalizeFhirVersion } from './utils';
+import { mergeSearchParams, normalizeFhirVersion, formatWeakEtag, toHttpDate } from './utils';
 
 export class FhirClient {
   private client: AxiosInstance;
@@ -54,10 +54,7 @@ export class FhirClient {
     }
   }
 
-  private async request<T = unknown>(
-    config: AxiosRequestConfig,
-    noCache = false,
-  ): Promise<T> {
+  private async request<T = unknown>(config: AxiosRequestConfig, noCache = false): Promise<T> {
     const cacheKey = this.cache ? JSON.stringify(config) : null;
 
     if (this.cache && config.method?.toLowerCase() === 'get' && !noCache) {
@@ -88,6 +85,87 @@ export class FhirClient {
     return response.data;
   }
 
+  /**
+   * Low-level helper that returns a full {@link FhirResponse} instead of just
+   * the body.  Does **not** throw for 304 / 404 / 410.
+   */
+  private async requestWithResponse<T = unknown>(
+    config: AxiosRequestConfig,
+    noCache = false,
+    requestMeta?: { resourceType?: string; id?: string },
+  ): Promise<FhirResponse<T>> {
+    const cacheKey = this.cache ? JSON.stringify(config) : null;
+
+    if (this.cache && config.method?.toLowerCase() === 'get' && !noCache) {
+      const cached = this.cache.get(cacheKey!);
+      if (cached) {
+        return { status: 200, headers: {}, resource: cached as T };
+      }
+    }
+
+    try {
+      const response: AxiosResponse<T> = await this.client.request({
+        ...config,
+        // Tell Axios not to reject on any status so we can handle 304/404/410
+        validateStatus: (status: number) =>
+          (status >= 200 && status < 300) || status === 304 || status === 404 || status === 410,
+      });
+
+      const headers = this.extractHeaders(response);
+
+      if (response.status === 304 || response.status === 404 || response.status === 410) {
+        return { status: response.status, headers, resource: undefined };
+      }
+
+      // Cache on success
+      if (this.cache && config.method?.toLowerCase() === 'get' && !noCache) {
+        this.cache.set(cacheKey!, response.data as Record<string, unknown>);
+      }
+
+      return { status: response.status, headers, resource: response.data };
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        const axiosErr = err as AxiosError;
+        const status = axiosErr.response?.status ?? 0;
+        const headers = axiosErr.response ? this.extractHeaders(axiosErr.response) : {};
+        const data = axiosErr.response?.data as Record<string, unknown> | undefined;
+        const operationOutcome =
+          data &&
+          typeof data === 'object' &&
+          (data as Record<string, unknown>).resourceType === 'OperationOutcome'
+            ? data
+            : undefined;
+
+        throw new FhirClientError(
+          `FHIR request failed with status ${status}`,
+          status,
+          headers,
+          operationOutcome,
+          {
+            method: config.method ?? 'GET',
+            url: config.url ?? '',
+            resourceType: requestMeta?.resourceType,
+            id: requestMeta?.id,
+          },
+        );
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Extract response headers into a plain Record with lower-cased keys.
+   */
+  private extractHeaders(response: AxiosResponse): Record<string, string | undefined> {
+    const headers: Record<string, string | undefined> = {};
+    if (response.headers) {
+      for (const [key, value] of Object.entries(response.headers)) {
+        headers[key.toLowerCase()] = typeof value === 'string' ? value : undefined;
+      }
+    }
+    return headers;
+  }
+
   getBaseUrl(): string {
     return this.config.baseUrl;
   }
@@ -95,15 +173,76 @@ export class FhirClient {
   async read<T extends Resource = Resource>(
     resourceType: string,
     id: string,
-    options?: { noCache?: boolean },
+    options?: { noCache?: boolean; headers?: Record<string, string> },
   ): Promise<T> {
     return this.request<T>(
       {
         method: 'GET',
         url: `${resourceType}/${id}`,
+        headers: options?.headers,
       },
       options?.noCache,
     );
+  }
+
+  /**
+   * Like {@link read} but returns a {@link FhirResponse} wrapper that exposes
+   * the HTTP status code and response headers.  Does **not** throw for
+   * `304 Not Modified`, `404 Not Found`, or `410 Gone`.
+   *
+   * This is the primary API for implementing conditional reads / polling.
+   */
+  async readWithResponse<T = unknown>(
+    resourceType: string,
+    id: string,
+    options?: ReadWithResponseOptions,
+  ): Promise<FhirResponse<T>> {
+    const normalizedHeaders =
+      options?.headers && Object.keys(options.headers).length > 0 ? options.headers : undefined;
+    return this.requestWithResponse<T>(
+      {
+        method: 'GET',
+        url: `${resourceType}/${id}`,
+        headers: normalizedHeaders,
+      },
+      options?.noCache,
+      { resourceType, id },
+    );
+  }
+
+  /**
+   * Convenience helper that builds the appropriate conditional-read headers
+   * (`If-None-Match` / `If-Modified-Since`) from cached version metadata and
+   * delegates to {@link readWithResponse}.
+   *
+   * Precedence:
+   * 1. If `condition.versionId` is present → sends `If-None-Match: W/"<versionId>"`.
+   * 2. Else if `condition.lastUpdated` is a valid ISO instant → sends `If-Modified-Since`.
+   * 3. Otherwise performs an unconditional read.
+   */
+  async conditionalRead<T = unknown>(
+    resourceType: string,
+    id: string,
+    condition: ConditionalReadCondition,
+    options?: { noCache?: boolean },
+  ): Promise<FhirResponse<T>> {
+    const headers: Record<string, string> = {};
+
+    if (condition.versionId) {
+      headers['If-None-Match'] = formatWeakEtag(condition.versionId);
+    } else if (condition.lastUpdated) {
+      const httpDate = toHttpDate(condition.lastUpdated);
+      if (httpDate) {
+        headers['If-Modified-Since'] = httpDate;
+      }
+    }
+
+    const normalizedHeaders = Object.keys(headers).length > 0 ? headers : undefined;
+
+    return this.readWithResponse<T>(resourceType, id, {
+      noCache: options?.noCache,
+      headers: normalizedHeaders,
+    });
   }
 
   async getCapabilities(): Promise<CapabilityStatement> {
@@ -113,13 +252,9 @@ export class FhirClient {
     });
   }
 
-  async processTransaction<T extends Resource = Resource>(
-    bundle: Bundle<T>,
-  ): Promise<Bundle<T>> {
+  async processTransaction<T extends Resource = Resource>(bundle: Bundle<T>): Promise<Bundle<T>> {
     if (bundle.resourceType !== 'Bundle') {
-      throw new Error(
-        `processTransaction requires a Bundle resource, got ${bundle.resourceType}`,
-      );
+      throw new Error(`processTransaction requires a Bundle resource, got ${bundle.resourceType}`);
     }
     if (bundle.type !== 'transaction') {
       throw new Error(
@@ -133,18 +268,12 @@ export class FhirClient {
     });
   }
 
-  async processBatch<T extends Resource = Resource>(
-    bundle: Bundle<T>,
-  ): Promise<Bundle<T>> {
+  async processBatch<T extends Resource = Resource>(bundle: Bundle<T>): Promise<Bundle<T>> {
     if (bundle.resourceType !== 'Bundle') {
-      throw new Error(
-        `processBatch requires a Bundle resource, got ${bundle.resourceType}`,
-      );
+      throw new Error(`processBatch requires a Bundle resource, got ${bundle.resourceType}`);
     }
     if (bundle.type !== 'batch') {
-      throw new Error(
-        `processBatch requires a Bundle of type 'batch', got '${bundle.type}'`,
-      );
+      throw new Error(`processBatch requires a Bundle of type 'batch', got '${bundle.type}'`);
     }
     return this.request<Bundle<T>>({
       method: 'POST',
@@ -153,10 +282,7 @@ export class FhirClient {
     });
   }
 
-  async create<T extends Resource = Resource>(
-    resourceType: string,
-    resource: T,
-  ): Promise<T> {
+  async create<T extends Resource = Resource>(resourceType: string, resource: T): Promise<T> {
     return this.request<T>({
       method: 'POST',
       url: resourceType,
@@ -191,7 +317,8 @@ export class FhirClient {
     options?: SearchOptions,
   ): Promise<Bundle<T> | T[]> {
     let url = resourceTypeOrQuery;
-    let searchParams: Record<string, string | number | boolean | (string | number | boolean)[]> = {};
+    let searchParams: Record<string, string | number | boolean | (string | number | boolean)[]> =
+      {};
 
     // Check if resourceTypeOrQuery contains a query string
     const queryIndex = resourceTypeOrQuery.indexOf('?');
@@ -208,7 +335,7 @@ export class FhirClient {
     if (options?.asPost) {
       // FHIR search via POST with _search endpoint and form-urlencoded
       const searchUrl = url.includes('/_search') ? url : `${url}/_search`;
-      
+
       // IMPORTANT: We manually construct URLSearchParams instead of using axios's `params` option
       // because axios doesn't support FHIR's array serialization format.
       // FHIR requires: identifier=val1&identifier=val2 (duplicate keys for AND semantics)
@@ -222,7 +349,7 @@ export class FhirClient {
           formParams.append(key, String(value));
         }
       });
-      
+
       response = await this.request<Bundle<T>>(
         {
           method: 'POST',
@@ -249,7 +376,7 @@ export class FhirClient {
           queryParams.append(key, String(value));
         }
       });
-      
+
       response = await this.request<Bundle<T>>(
         {
           method: 'GET',
@@ -275,11 +402,7 @@ export class FhirClient {
     let currentBundle = initialBundle;
 
     if (currentBundle.entry) {
-      results.push(
-        ...currentBundle.entry
-          .map((e) => e.resource)
-          .filter((r): r is T => !!r),
-      );
+      results.push(...currentBundle.entry.map((e) => e.resource).filter((r): r is T => !!r));
     }
 
     if (results.length > maxResults) {
@@ -288,26 +411,19 @@ export class FhirClient {
       );
     }
 
-    while (
-      currentBundle.link &&
-      currentBundle.link.some((l) => l.relation === 'next')
-    ) {
+    while (currentBundle.link && currentBundle.link.some((l) => l.relation === 'next')) {
       const nextLink = currentBundle.link.find((l) => l.relation === 'next');
       if (!nextLink || !nextLink.url) break;
-      
+
       const nextUrl = nextLink.url;
-      
+
       currentBundle = await this.request<Bundle<T>>({
         method: 'GET',
         url: nextUrl,
       });
 
       if (currentBundle.entry) {
-        results.push(
-          ...currentBundle.entry
-            .map((e) => e.resource)
-            .filter((r): r is T => !!r),
-        );
+        results.push(...currentBundle.entry.map((e) => e.resource).filter((r): r is T => !!r));
       }
 
       if (results.length > maxResults) {
@@ -325,15 +441,14 @@ export class FhirClient {
     params?: SearchParams,
     options?: Pick<SearchOptions, 'asPost' | 'noCache'>,
   ): Promise<string> {
-    const bundle = await this.search<Resource>(
-      resourceTypeOrQuery,
-      params,
-      { ...options, fetchAll: false },
-    ) as Bundle<Resource>;
+    const bundle = (await this.search<Resource>(resourceTypeOrQuery, params, {
+      ...options,
+      fetchAll: false,
+    })) as Bundle<Resource>;
 
     // Filter for entries with search.mode === 'match' to exclude OperationOutcome and other informational entries
     const matchEntries = (bundle.entry || []).filter(
-      (entry) => !entry.search || entry.search.mode === 'match'
+      (entry) => !entry.search || entry.search.mode === 'match',
     );
 
     if (matchEntries.length === 0) {
@@ -341,7 +456,9 @@ export class FhirClient {
     }
 
     if (matchEntries.length > 1) {
-      throw new Error(`Search returned multiple matches (${matchEntries.length}), criteria not selective enough`);
+      throw new Error(
+        `Search returned multiple matches (${matchEntries.length}), criteria not selective enough`,
+      );
     }
 
     const resource = matchEntries[0].resource;
@@ -369,7 +486,7 @@ export class FhirClient {
   ): Promise<T> {
     // Check if it's a literal reference (resourceType/id format)
     const literalPattern = /^[A-Z][a-zA-Z]+\/[A-Za-z0-9-.]+$/;
-    
+
     if (literalPattern.test(literalOrQuery) && !params) {
       // It's a literal reference, perform a read
       const [resourceType, id] = literalOrQuery.split('/');
@@ -377,15 +494,14 @@ export class FhirClient {
     }
 
     // It's a search query, resolve to single resource
-    const bundle = await this.search<T>(
-      literalOrQuery,
-      params,
-      { ...options, fetchAll: false },
-    ) as Bundle<T>;
+    const bundle = (await this.search<T>(literalOrQuery, params, {
+      ...options,
+      fetchAll: false,
+    })) as Bundle<T>;
 
     // Filter for entries with search.mode === 'match' to exclude OperationOutcome and other informational entries
     const matchEntries = (bundle.entry || []).filter(
-      (entry) => !entry.search || entry.search.mode === 'match'
+      (entry) => !entry.search || entry.search.mode === 'match',
     );
 
     if (matchEntries.length === 0) {
