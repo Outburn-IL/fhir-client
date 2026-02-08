@@ -1295,7 +1295,7 @@ describe('FhirClient', () => {
 
       try {
         await client.readWithResponse('Patient', '123');
-        fail('expected error');
+        throw new Error('expected error');
       } catch (err) {
         expect(err).toBeInstanceOf(FhirClientError);
         const fhirErr = err as FhirClientError;
@@ -1320,7 +1320,7 @@ describe('FhirClient', () => {
 
       try {
         await client.readWithResponse('Patient', '123');
-        fail('expected error');
+        throw new Error('expected error');
       } catch (err) {
         expect(err).toBeInstanceOf(FhirClientError);
         expect((err as FhirClientError).status).toBe(401);
