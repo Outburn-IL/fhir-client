@@ -285,6 +285,18 @@ const updatedPatient = await client.update({
   id: '123',
   active: false,
 });
+
+// Version-aware update (optimistic concurrency)
+// If you previously read the resource, you can send an If-Match header
+// (usually from the response ETag or resource.meta.versionId) to avoid
+// overwriting concurrent updates.
+const resp = await client.readWithResponse('Patient', '123', { noCache: true });
+const etag = resp.headers.etag; // often like: W/"5"
+
+if (resp.status === 200 && resp.resource && etag) {
+  resp.resource.active = false;
+  await client.update(resp.resource, { headers: { 'If-Match': etag } });
+}
 ```
 
 ### Delete
