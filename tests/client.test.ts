@@ -328,6 +328,56 @@ describe('FhirClient', () => {
     expect(result).toEqual(patient);
   });
 
+  test('update should forward per-request headers', async () => {
+    const patient = { resourceType: 'Patient', id: '123', active: true };
+    mockedAxios.request.mockResolvedValueOnce({
+      data: patient,
+    });
+
+    await client.update(patient, {
+      headers: {
+        'If-Match': 'W/"7"',
+        'X-Request-Id': 'abc-123',
+      },
+    });
+
+    expect(mockedAxios.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'PUT',
+        url: 'Patient/123',
+        headers: expect.objectContaining({
+          'If-Match': 'W/"7"',
+          'X-Request-Id': 'abc-123',
+          // update() goes through the mutation request path, so Content-Type should be ensured
+          'Content-Type': expect.stringContaining('application/fhir+json'),
+        }),
+      }),
+    );
+  });
+
+  test('update should not overwrite explicit Content-Type header', async () => {
+    const patient = { resourceType: 'Patient', id: '123', active: true };
+    mockedAxios.request.mockResolvedValueOnce({
+      data: patient,
+    });
+
+    await client.update(patient, {
+      headers: {
+        'Content-Type': 'application/custom+json',
+      },
+    });
+
+    expect(mockedAxios.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'PUT',
+        url: 'Patient/123',
+        headers: expect.objectContaining({
+          'Content-Type': 'application/custom+json',
+        }),
+      }),
+    );
+  });
+
   test('update should throw error if resourceType is missing', async () => {
     const patient = { id: '123', active: true } as any;
 

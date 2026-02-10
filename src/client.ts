@@ -290,7 +290,10 @@ export class FhirClient {
     });
   }
 
-  async update<T extends Resource = Resource>(resource: T): Promise<T> {
+  async update<T extends Resource = Resource>(
+    resource: T,
+    options?: { headers?: Record<string, string> },
+  ): Promise<T> {
     if (!resource.resourceType) {
       throw new Error('Resource must have a resourceType property');
     }
@@ -301,6 +304,7 @@ export class FhirClient {
       method: 'PUT',
       url: `${resource.resourceType}/${resource.id}`,
       data: resource,
+      headers: options?.headers,
     });
   }
 
