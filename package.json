@@ -12,7 +12,8 @@
     "lint": "eslint --config eslint.config.cjs src/**/*.ts",
     "lint:fix": "eslint --config eslint.config.cjs src/**/*.ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
-    "prepublishOnly": "npm run lint && npm run build"
+    "prepublishOnly": "npm run lint && npm run build",
+    "docker:stop": "docker stop fhir-client-test-hapi"
   },
   "keywords": [
     "fhir",
