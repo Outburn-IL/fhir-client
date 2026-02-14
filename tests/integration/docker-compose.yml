@@ -1,12 +1,14 @@
+name: fhir-client_hapi_tests
+
 services:
   hapi-fhir:
     image: hapiproject/hapi:latest
     container_name: fhir-client-test-hapi
     ports:
-      - "8080:8080"
+      - "8083:8080"
     environment:
       - hapi.fhir.fhir_version=R4
-      - hapi.fhir.server_address=http://localhost:8080/fhir
+      - hapi.fhir.server_address=http://localhost:8083/fhir
     volumes:
       - ./hapi.application.yaml:/app/config/application.yaml:ro
     healthcheck:
