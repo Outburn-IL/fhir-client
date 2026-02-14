@@ -2,7 +2,7 @@
 import { FhirClient } from '../../src/client';
 import { Bundle, CapabilityStatement, Resource } from '@outburn/types';
 
-const FHIR_BASE_URL = 'http://localhost:8080/fhir';
+const FHIR_BASE_URL = 'http://localhost:8083/fhir';
 
 // Helper type for Patient resources in tests
 interface PatientName {
