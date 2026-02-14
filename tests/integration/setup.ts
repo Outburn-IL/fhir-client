@@ -1,61 +1,54 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import { upAll } from 'docker-compose';
+import { execSync } from 'child_process';
 import * as path from 'path';
-import axios from 'axios';
 
-const FHIR_BASE_URL = 'http://localhost:8080/fhir';
-const MAX_RETRIES = 60; // 60 retries with 2 second intervals = 2 minutes max
-const RETRY_INTERVAL = 2000; // 2 seconds
+const FHIR_BASE_URL = 'http://localhost:8083/fhir';
 
-async function pollMetadataEndpoint(): Promise<void> {
-  console.log('Polling FHIR server metadata endpoint...');
-  
-  for (let i = 0; i < MAX_RETRIES; i++) {
+async function waitForHapiReady (baseUrl: string, opts?: { maxAttempts?: number; delayMs?: number; timeoutMs?: number }) {
+  const maxAttempts = opts?.maxAttempts ?? 60;
+  const delayMs = opts?.delayMs ?? 2000;
+  const timeoutMs = opts?.timeoutMs ?? 5000;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const response = await axios.get(`${FHIR_BASE_URL}/metadata`, {
-        timeout: 5000,
-      });
-      
-      if (response.data?.resourceType === 'CapabilityStatement') {
-        const fhirVersion = response.data.fhirVersion;
-        console.log(`FHIR server is ready! FHIR Version: ${fhirVersion}`);
-        
-        if (fhirVersion !== '4.0.1') {
-          console.warn(`Warning: Expected FHIR version 4.0.1, got ${fhirVersion}`);
-        }
-        
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      const response = await fetch(`${baseUrl}/metadata`, { signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (response.ok) {
         return;
       }
-    } catch (error) {
-      // Server not ready yet, continue polling
-      if (i < MAX_RETRIES - 1) {
-        await new Promise(resolve => setTimeout(resolve, RETRY_INTERVAL));
-      }
+    } catch {
+      // Server not ready yet
     }
+
+    await new Promise(resolve => setTimeout(resolve, delayMs));
   }
-  
-  throw new Error('FHIR server did not respond with a valid CapabilityStatement within the timeout period');
+
+  throw new Error('HAPI FHIR server failed to start within timeout');
 }
 
-export default async function globalSetup() {
-  console.log('Starting HAPI FHIR server for integration tests...');
-  
-  const composeFilePath = path.join(__dirname, 'docker-compose.yml');
-  const composeOptions = {
-    cwd: path.dirname(composeFilePath),
-    log: true,
-  };
-  
+export default async function globalSetup () {
+  console.log('Checking HAPI FHIR server status...');
+
   try {
-    await upAll(composeOptions);
-    console.log('Docker containers started');
-    
-    // Wait for server to be ready
-    await pollMetadataEndpoint();
-    
-    console.log('Integration test environment is ready!');
-  } catch (error) {
-    console.error('Failed to start integration test environment:', error);
-    throw error;
+    const response = await fetch(`${FHIR_BASE_URL}/metadata`);
+    if (response.ok) {
+      console.log('HAPI FHIR server is already running and healthy!');
+      return;
+    }
+  } catch {
+    // Server not running or not ready
   }
+
+  console.log('Starting HAPI FHIR server...');
+  const composeFile = path.join(__dirname, 'docker-compose.yml');
+  execSync(`docker compose -f "${composeFile}" up -d`, {
+    stdio: 'inherit',
+    cwd: __dirname
+  });
+
+  console.log('Waiting for HAPI FHIR server to be ready...');
+  await waitForHapiReady(FHIR_BASE_URL, { maxAttempts: 60, delayMs: 2000 });
+  await new Promise(resolve => setTimeout(resolve, 2000));
 }
