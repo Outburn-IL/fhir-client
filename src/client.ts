@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { LRUCache } from 'lru-cache';
 import { Bundle, CapabilityStatement, Resource } from '@outburn/types';
 import {
@@ -16,6 +16,46 @@ export class FhirClient {
   private client: AxiosInstance;
   private config: FhirClientConfig;
   private cache?: LRUCache<string, Record<string, unknown>>;
+
+  private static readonly sensitiveHeaderNames = new Set([
+    'authorization',
+    'proxy-authorization',
+    'cookie',
+    'set-cookie',
+  ]);
+
+  private toFhirClientError(
+    error: unknown,
+    config: AxiosRequestConfig,
+    requestMeta?: { resourceType?: string; id?: string },
+  ): FhirClientError | undefined {
+    if (!axios.isAxiosError(error)) {
+      return undefined;
+    }
+
+    const status = error.response?.status ?? 0;
+    const headers = error.response ? this.extractHeaders(error.response, true) : {};
+    const data = error.response?.data;
+    const operationOutcome =
+      data &&
+      typeof data === 'object' &&
+      (data as Record<string, unknown>).resourceType === 'OperationOutcome'
+        ? data
+        : undefined;
+
+    return new FhirClientError(
+      status > 0 ? `FHIR request failed with status ${status}` : `FHIR request failed: ${error.message}`,
+      status,
+      headers,
+      operationOutcome,
+      {
+        method: config.method ?? 'GET',
+        url: config.url ?? '',
+        resourceType: requestMeta?.resourceType,
+        id: requestMeta?.id,
+      },
+    );
+  }
 
   constructor(config: FhirClientConfig) {
     this.config = config;
@@ -54,7 +94,11 @@ export class FhirClient {
     }
   }
 
-  private async request<T = unknown>(config: AxiosRequestConfig, noCache = false): Promise<T> {
+  private async request<T = unknown>(
+    config: AxiosRequestConfig,
+    noCache = false,
+    requestMeta?: { resourceType?: string; id?: string },
+  ): Promise<T> {
     const cacheKey = this.cache ? JSON.stringify(config) : null;
 
     if (this.cache && config.method?.toLowerCase() === 'get' && !noCache) {
@@ -76,13 +120,21 @@ export class FhirClient {
       };
     }
 
-    const response: AxiosResponse<T> = await this.client.request(config);
+    try {
+      const response: AxiosResponse<T> = await this.client.request(config);
 
-    if (this.cache && config.method?.toLowerCase() === 'get' && !noCache) {
-      this.cache.set(cacheKey!, response.data as Record<string, unknown>);
+      if (this.cache && config.method?.toLowerCase() === 'get' && !noCache) {
+        this.cache.set(cacheKey!, response.data as Record<string, unknown>);
+      }
+
+      return response.data;
+    } catch (error) {
+      const normalizedError = this.toFhirClientError(error, config, requestMeta);
+      if (normalizedError) {
+        throw normalizedError;
+      }
+      throw error;
     }
-
-    return response.data;
   }
 
   /**
@@ -124,30 +176,9 @@ export class FhirClient {
 
       return { status: response.status, headers, resource: response.data };
     } catch (err) {
-      if (axios.isAxiosError(err)) {
-        const axiosErr = err as AxiosError;
-        const status = axiosErr.response?.status ?? 0;
-        const headers = axiosErr.response ? this.extractHeaders(axiosErr.response) : {};
-        const data = axiosErr.response?.data as Record<string, unknown> | undefined;
-        const operationOutcome =
-          data &&
-          typeof data === 'object' &&
-          (data as Record<string, unknown>).resourceType === 'OperationOutcome'
-            ? data
-            : undefined;
-
-        throw new FhirClientError(
-          `FHIR request failed with status ${status}`,
-          status,
-          headers,
-          operationOutcome,
-          {
-            method: config.method ?? 'GET',
-            url: config.url ?? '',
-            resourceType: requestMeta?.resourceType,
-            id: requestMeta?.id,
-          },
-        );
+      const normalizedError = this.toFhirClientError(err, config, requestMeta);
+      if (normalizedError) {
+        throw normalizedError;
       }
       throw err;
     }
@@ -156,11 +187,19 @@ export class FhirClient {
   /**
    * Extract response headers into a plain Record with lower-cased keys.
    */
-  private extractHeaders(response: AxiosResponse): Record<string, string | undefined> {
+  private extractHeaders(
+    response: AxiosResponse,
+    redactSensitive = false,
+  ): Record<string, string | undefined> {
     const headers: Record<string, string | undefined> = {};
     if (response.headers) {
       for (const [key, value] of Object.entries(response.headers)) {
-        headers[key.toLowerCase()] = typeof value === 'string' ? value : undefined;
+        const normalizedKey = key.toLowerCase();
+        if (redactSensitive && FhirClient.sensitiveHeaderNames.has(normalizedKey)) {
+          continue;
+        }
+
+        headers[normalizedKey] = typeof value === 'string' ? value : undefined;
       }
     }
     return headers;
@@ -182,6 +221,7 @@ export class FhirClient {
         headers: options?.headers,
       },
       options?.noCache,
+      { resourceType, id },
     );
   }
 
