@@ -7,12 +7,44 @@ import { Bundle } from '@outburn/types';
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+const createAxiosError = ({
+  message = 'Request failed',
+  status,
+  data,
+  headers = {},
+  extra = {},
+}: {
+  message?: string;
+  status?: number;
+  data?: unknown;
+  headers?: Record<string, unknown>;
+  extra?: Record<string, unknown>;
+}) => {
+  const error = new Error(message) as Error & {
+    isAxiosError: boolean;
+    response?: {
+      status: number;
+      data?: unknown;
+      headers?: Record<string, unknown>;
+    };
+  } & Record<string, unknown>;
+
+  error.isAxiosError = true;
+  if (typeof status === 'number') {
+    error.response = { status, data, headers };
+  }
+
+  Object.assign(error, extra);
+  return error;
+};
+
 describe('FhirClient', () => {
   let client: FhirClient;
 
   beforeEach(() => {
     mockedAxios.create.mockReturnThis();
     mockedAxios.request.mockResolvedValue({ data: {} });
+    mockedAxios.isAxiosError.mockImplementation((value) => Boolean((value as any)?.isAxiosError));
 
     client = new FhirClient({
       baseUrl: 'http://example.com/fhir',
@@ -602,6 +634,31 @@ describe('FhirClient', () => {
       .mockRejectedValueOnce(new Error('Network error'));
 
     await expect(client.search('Patient', {}, { fetchAll: true })).rejects.toThrow('Network error');
+  });
+
+  test('should normalize Axios pagination failures to FhirClientError', async () => {
+    const bundle1: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      link: [{ relation: 'next', url: 'http://example.com/fhir/Patient?page=2' }],
+      entry: [{ resource: { resourceType: 'Patient', id: '1' } }],
+    };
+
+    mockedAxios.request
+      .mockResolvedValueOnce({ data: bundle1 })
+      .mockRejectedValueOnce(
+        createAxiosError({
+          status: 502,
+          data: { resourceType: 'OperationOutcome', issue: [{ severity: 'error' }] },
+          headers: { 'content-type': 'application/fhir+json' },
+        }),
+      );
+
+    await expect(client.search('Patient', {}, { fetchAll: true })).rejects.toMatchObject({
+      name: 'FhirClientError',
+      status: 502,
+      request: { method: 'GET', url: 'http://example.com/fhir/Patient?page=2' },
+    });
   });
 
   test('should throw error when fetchAll exceeds maxResults config', async () => {
@@ -1247,6 +1304,21 @@ describe('FhirClient', () => {
         }),
       );
     });
+
+    test('should throw FhirClientError when literal resolve request fails', async () => {
+      mockedAxios.request.mockRejectedValueOnce(
+        createAxiosError({
+          status: 401,
+          headers: { 'www-authenticate': 'Basic realm="FHIR"' },
+        }),
+      );
+
+      await expect(client.resolve('Patient/123')).rejects.toMatchObject({
+        name: 'FhirClientError',
+        status: 401,
+        request: { method: 'GET', url: 'Patient/123', resourceType: 'Patient', id: '123' },
+      });
+    });
   });
 
   describe('readWithResponse', () => {
@@ -1331,17 +1403,13 @@ describe('FhirClient', () => {
     });
 
     test('should throw FhirClientError for 500', async () => {
-      const axiosError: any = new Error('Request failed');
-      axiosError.isAxiosError = true;
-      axiosError.response = {
-        status: 500,
-        data: { resourceType: 'OperationOutcome', issue: [{ severity: 'error' }] },
-        headers: { 'content-type': 'application/fhir+json' },
-      };
-
-      mockedAxios.request.mockRejectedValueOnce(axiosError);
-      // Need to mock axios.isAxiosError
-      (axios.isAxiosError as unknown as jest.Mock) = jest.fn().mockReturnValue(true);
+      mockedAxios.request.mockRejectedValueOnce(
+        createAxiosError({
+          status: 500,
+          data: { resourceType: 'OperationOutcome', issue: [{ severity: 'error' }] },
+          headers: { 'content-type': 'application/fhir+json' },
+        }),
+      );
 
       try {
         await client.readWithResponse('Patient', '123');
@@ -1357,16 +1425,14 @@ describe('FhirClient', () => {
     });
 
     test('should throw FhirClientError for 401', async () => {
-      const axiosError: any = new Error('Unauthorized');
-      axiosError.isAxiosError = true;
-      axiosError.response = {
-        status: 401,
-        data: {},
-        headers: {},
-      };
-
-      mockedAxios.request.mockRejectedValueOnce(axiosError);
-      (axios.isAxiosError as unknown as jest.Mock) = jest.fn().mockReturnValue(true);
+      mockedAxios.request.mockRejectedValueOnce(
+        createAxiosError({
+          message: 'Unauthorized',
+          status: 401,
+          data: {},
+          headers: {},
+        }),
+      );
 
       try {
         await client.readWithResponse('Patient', '123');
@@ -1393,6 +1459,75 @@ describe('FhirClient', () => {
       expect(resp.headers['etag']).toBe('W/"5"');
       expect(resp.headers['content-type']).toBe('application/fhir+json');
       expect(resp.headers['last-modified']).toBe('Sun, 08 Feb 2026 01:02:03 GMT');
+    });
+
+    test('read should throw FhirClientError instead of raw Axios error', async () => {
+      mockedAxios.request.mockRejectedValueOnce(
+        createAxiosError({
+          status: 401,
+          data: { resourceType: 'OperationOutcome', issue: [{ severity: 'error' }] },
+          headers: { 'content-type': 'application/fhir+json' },
+        }),
+      );
+
+      await expect(client.read('Patient', '123')).rejects.toMatchObject({
+        name: 'FhirClientError',
+        status: 401,
+        request: { method: 'GET', url: 'Patient/123', resourceType: 'Patient', id: '123' },
+      });
+    });
+
+    test('search should throw FhirClientError when the request fails', async () => {
+      mockedAxios.request.mockRejectedValueOnce(
+        createAxiosError({
+          status: 503,
+          headers: { 'retry-after': '30' },
+        }),
+      );
+
+      await expect(client.search('Patient', { active: true })).rejects.toMatchObject({
+        name: 'FhirClientError',
+        status: 503,
+        headers: { 'retry-after': '30' },
+        request: { method: 'GET', url: 'Patient?active=true' },
+      });
+    });
+
+    test('read failures should not expose auth or raw Axios config fields', async () => {
+      const authClient = new FhirClient({
+        baseUrl: 'http://example.com/fhir',
+        fhirVersion: 'R4',
+        auth: {
+          username: 'secret-user',
+          password: 'secret-pass',
+        },
+      });
+
+      mockedAxios.request.mockRejectedValueOnce(
+        createAxiosError({
+          status: 500,
+          headers: { authorization: 'Basic dGVzdDp0ZXN0' },
+          extra: {
+            config: {
+              auth: { username: 'secret-user', password: 'secret-pass' },
+              headers: { authorization: 'Basic dGVzdDp0ZXN0' },
+            },
+          },
+        }),
+      );
+
+      try {
+        await authClient.read('Patient', '123');
+        throw new Error('expected error');
+      } catch (err) {
+        expect(err).toBeInstanceOf(FhirClientError);
+        const serialized = JSON.stringify(err);
+        expect(serialized).not.toContain('secret-user');
+        expect(serialized).not.toContain('secret-pass');
+        expect(serialized).not.toContain('"auth"');
+        expect(serialized).not.toContain('"config"');
+        expect(serialized).not.toContain('Basic dGVzdDp0ZXN0');
+      }
     });
 
     test('should bypass cache when noCache is true', async () => {
