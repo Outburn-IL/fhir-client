@@ -220,6 +220,39 @@ describe('FhirClient', () => {
     expect(callOrder).toEqual(['start-1', 'end-1', 'start-2', 'end-2', 'start-3', 'end-3']);
   });
 
+  test('search with fetchAll and transform should pass undefined mode without shifting later arguments', async () => {
+    const bundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: [
+        {
+          resource: { resourceType: 'Patient', id: '1' },
+        },
+      ],
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+    const results = await client.search('Patient', {}, {
+      fetchAll: true,
+      transform: (resource, mode, index, entry) => ({
+        id: resource.id,
+        mode,
+        index,
+        entryId: entry.resource?.id,
+      }),
+    });
+
+    expect(results).toEqual([
+      {
+        id: '1',
+        mode: undefined,
+        index: 0,
+        entryId: '1',
+      },
+    ]);
+  });
+
   test('create should make a POST request', async () => {
     const patient = { resourceType: 'Patient', name: [{ family: 'Doe' }] };
     mockedAxios.request.mockResolvedValueOnce({
