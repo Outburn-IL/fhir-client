@@ -185,6 +185,22 @@ const allPatients = await client.search('Patient', { active: true }, { fetchAll:
 // Override the default max limit for this search
 const manyPatients = await client.search('Patient', {}, { fetchAll: true, maxResults: 50000 });
 
+// Transform fetched resources as pages are scanned
+const patientSummaries = await client.search('Patient', { active: true }, {
+  fetchAll: true,
+  transform: (resource, mode, index) => {
+    if (mode === 'include') {
+      return undefined;
+    }
+
+    return {
+      id: resource.id,
+      resourceType: resource.resourceType,
+      index,
+    };
+  },
+});
+
 // Search via POST with form-urlencoded (useful for long query strings or server requirements)
 const postResults = await client.search('Patient', { name: 'John' }, { asPost: true });
 
@@ -366,10 +382,43 @@ const allPatients = await client.search('Patient', { active: true }, { fetchAll:
 
 ### `maxResults`
 
-Maximum number of resources to fetch when using `fetchAll`. Overrides the client-level `maxFetchAllResults` config for this specific search.
+Maximum number of raw resources to fetch when using `fetchAll`. Overrides the client-level `maxFetchAllResults` config for this specific search.
+
+When `transform` is used, `maxResults` is still counted before transform filtering. Filtered-out items still count toward the raw fetch limit.
 
 ```typescript
 const patients = await client.search('Patient', {}, { fetchAll: true, maxResults: 5000 });
+```
+
+### `transform`
+
+Apply a callback to each `Bundle.entry[].resource` as pages are fetched. This option is only valid together with `fetchAll: true`.
+
+The callback receives `(resource, mode, index, entry)` where:
+
+- `resource` is the fetched resource
+- `mode` is `entry.search.mode` when present
+- `index` is the zero-based running index across raw fetched resources
+- `entry` is the original bundle entry
+
+Return `undefined` to filter an item out of the final array.
+
+```typescript
+const matchOnlyIds = await client.search('Patient', { _include: 'Patient:general-practitioner' }, {
+  fetchAll: true,
+  transform: (resource, mode, index, entry) => {
+    if (mode === 'include') {
+      return undefined;
+    }
+
+    return {
+      id: resource.id,
+      mode,
+      index,
+      fullUrl: entry.fullUrl,
+    };
+  },
+});
 ```
 
 ### `asPost`

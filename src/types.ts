@@ -1,4 +1,4 @@
-import { FhirVersion } from '@outburn/types';
+import { Bundle, FhirVersion, Resource } from '@outburn/types';
 
 export interface FhirClientConfig {
   baseUrl: string;
@@ -22,12 +22,28 @@ export interface SearchParams {
   [key: string]: string | number | boolean | (string | number | boolean)[];
 }
 
-export interface SearchOptions {
-  fetchAll?: boolean;
-  maxResults?: number;
-  asPost?: boolean;
-  noCache?: boolean;
-}
+export type SearchTransform<TResource extends Resource = Resource, TResult = TResource> = (
+  resource: TResource,
+  mode: string | undefined,
+  index: number,
+  entry: NonNullable<Bundle<TResource>['entry']>[number],
+) => TResult | undefined | Promise<TResult | undefined>;
+
+export type SearchOptions<TResource extends Resource = Resource, TResult = TResource> =
+  | {
+      fetchAll?: false;
+      maxResults?: number;
+      asPost?: boolean;
+      noCache?: boolean;
+      transform?: never;
+    }
+  | {
+      fetchAll: true;
+      maxResults?: number;
+      asPost?: boolean;
+      noCache?: boolean;
+      transform?: SearchTransform<TResource, TResult>;
+    };
 
 /**
  * Response wrapper returned by `readWithResponse()` and `conditionalRead()`.

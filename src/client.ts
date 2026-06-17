@@ -9,6 +9,7 @@ import {
   ConditionalReadCondition,
   SearchParams,
   SearchOptions,
+  SearchTransform,
 } from './types';
 import { mergeSearchParams, normalizeFhirVersion, formatWeakEtag, toHttpDate } from './utils';
 
@@ -358,8 +359,37 @@ export class FhirClient {
   async search<T extends Resource = Resource>(
     resourceTypeOrQuery: string,
     params?: SearchParams,
-    options?: SearchOptions,
-  ): Promise<Bundle<T> | T[]> {
+    options?: SearchOptions<T> & { fetchAll?: false },
+  ): Promise<Bundle<T>>;
+
+  async search<T extends Resource = Resource>(
+    resourceTypeOrQuery: string,
+    params: SearchParams | undefined,
+    options: SearchOptions<T> & { fetchAll: true; transform?: undefined },
+  ): Promise<T[]>;
+
+  async search<T extends Resource = Resource, TResult = T>(
+    resourceTypeOrQuery: string,
+    params: SearchParams | undefined,
+    options: SearchOptions<T, TResult> & { fetchAll: true; transform: SearchTransform<T, TResult> },
+  ): Promise<TResult[]>;
+
+  async search<T extends Resource = Resource, TResult = T>(
+    resourceTypeOrQuery: string,
+    params?: SearchParams,
+    options?: SearchOptions<T, TResult>,
+  ): Promise<Bundle<T> | TResult[]> {
+    const transform = options?.transform;
+    if (typeof transform !== 'undefined') {
+      if (!options?.fetchAll) {
+        throw new Error('The transform option is only supported when fetchAll is true.');
+      }
+
+      if (typeof transform !== 'function') {
+        throw new Error('The transform option must be a function.');
+      }
+    }
+
     let url = resourceTypeOrQuery;
     let searchParams: Record<string, string | number | boolean | (string | number | boolean)[]> =
       {};
@@ -432,28 +462,52 @@ export class FhirClient {
 
     if (options?.fetchAll) {
       const maxResults = options.maxResults ?? this.config.maxFetchAllResults ?? 10000;
-      return this.fetchAllPages(response, maxResults);
+      return this.fetchAllPages(response, maxResults, transform);
     }
 
     return response;
   }
 
-  private async fetchAllPages<T extends Resource>(
+  private async fetchAllPages<T extends Resource, TResult = T>(
     initialBundle: Bundle<T>,
     maxResults: number,
-  ): Promise<T[]> {
-    const results: T[] = [];
+    transform?: SearchTransform<T, TResult>,
+  ): Promise<TResult[]> {
+    const results: TResult[] = [];
     let currentBundle = initialBundle;
+    let rawResourceCount = 0;
 
-    if (currentBundle.entry) {
-      results.push(...currentBundle.entry.map((e) => e.resource).filter((r): r is T => !!r));
-    }
-
-    if (results.length > maxResults) {
-      throw new Error(
+    const maxResultsError = () =>
+      new Error(
         `Maximum result limit (${maxResults}) exceeded. Narrow down your search or increase maxFetchAllResults.`,
       );
-    }
+
+    const appendBundleEntries = async (bundle: Bundle<T>) => {
+      for (const entry of bundle.entry || []) {
+        const resource = entry.resource;
+        if (!resource) {
+          continue;
+        }
+
+        if (rawResourceCount >= maxResults) {
+          throw maxResultsError();
+        }
+
+        const currentIndex = rawResourceCount;
+        rawResourceCount += 1;
+
+        if (transform) {
+          const transformed = await transform(resource, entry.search?.mode, currentIndex, entry);
+          if (typeof transformed !== 'undefined') {
+            results.push(transformed);
+          }
+        } else {
+          results.push(resource as unknown as TResult);
+        }
+      }
+    };
+
+    await appendBundleEntries(currentBundle);
 
     while (currentBundle.link && currentBundle.link.some((l) => l.relation === 'next')) {
       const nextLink = currentBundle.link.find((l) => l.relation === 'next');
@@ -466,15 +520,7 @@ export class FhirClient {
         url: nextUrl,
       });
 
-      if (currentBundle.entry) {
-        results.push(...currentBundle.entry.map((e) => e.resource).filter((r): r is T => !!r));
-      }
-
-      if (results.length > maxResults) {
-        throw new Error(
-          `Maximum result limit (${maxResults}) exceeded. Narrow down your search or increase maxFetchAllResults.`,
-        );
-      }
+      await appendBundleEntries(currentBundle);
     }
 
     return results;
