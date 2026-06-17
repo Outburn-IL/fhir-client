@@ -365,6 +365,12 @@ export class FhirClient {
   async search<T extends Resource = Resource>(
     resourceTypeOrQuery: string,
     params: SearchParams | undefined,
+    options: SearchOptions<T> & { fetchAll: boolean; transform?: undefined },
+  ): Promise<Bundle<T> | T[]>;
+
+  async search<T extends Resource = Resource>(
+    resourceTypeOrQuery: string,
+    params: SearchParams | undefined,
     options: SearchOptions<T> & { fetchAll: true; transform?: undefined },
   ): Promise<T[]>;
 

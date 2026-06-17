@@ -29,21 +29,25 @@ export type SearchTransform<TResource extends Resource = Resource, TResult = TRe
   entry: NonNullable<Bundle<TResource>['entry']>[number],
 ) => TResult | undefined | Promise<TResult | undefined>;
 
+type SearchOptionsBase = {
+  maxResults?: number;
+  asPost?: boolean;
+  noCache?: boolean;
+};
+
 export type SearchOptions<TResource extends Resource = Resource, TResult = TResource> =
-  | {
+  | (SearchOptionsBase & {
       fetchAll?: false;
-      maxResults?: number;
-      asPost?: boolean;
-      noCache?: boolean;
       transform?: never;
-    }
-  | {
+    })
+  | (SearchOptionsBase & {
+      fetchAll: boolean;
+      transform?: never;
+    })
+  | (SearchOptionsBase & {
       fetchAll: true;
-      maxResults?: number;
-      asPost?: boolean;
-      noCache?: boolean;
       transform?: SearchTransform<TResource, TResult>;
-    };
+    });
 
 /**
  * Response wrapper returned by `readWithResponse()` and `conditionalRead()`.
