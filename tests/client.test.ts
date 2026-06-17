@@ -146,6 +146,113 @@ describe('FhirClient', () => {
     expect(mockedAxios.request).toHaveBeenCalledTimes(2);
   });
 
+  test('search with fetchAll and transform should process entries in order across pages', async () => {
+    const bundle1: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      link: [{ relation: 'next', url: 'http://example.com/fhir/Patient?page=2' }],
+      entry: [
+        {
+          resource: { resourceType: 'Patient', id: '1' },
+          search: { mode: 'match' },
+        },
+      ],
+    };
+    const bundle2: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: [
+        {
+          resource: { resourceType: 'Observation', id: '2' },
+          search: { mode: 'include' },
+        },
+        {
+          resource: { resourceType: 'Patient', id: '3' },
+          search: { mode: 'match' },
+        },
+      ],
+    };
+
+    mockedAxios.request
+      .mockResolvedValueOnce({ data: bundle1 })
+      .mockResolvedValueOnce({ data: bundle2 });
+
+    const results = await client.search('Patient', {}, {
+      fetchAll: true,
+      transform: (resource, mode, index, entry) => ({
+        id: resource.id,
+        mode,
+        index,
+        entryId: entry.resource?.id,
+      }),
+    });
+
+    expect(results).toEqual([
+      { id: '1', mode: 'match', index: 0, entryId: '1' },
+      { id: '2', mode: 'include', index: 1, entryId: '2' },
+      { id: '3', mode: 'match', index: 2, entryId: '3' },
+    ]);
+  });
+
+  test('search with fetchAll and async transform should filter undefined results', async () => {
+    const bundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: Array.from({ length: 3 }, (_, i) => ({
+        resource: { resourceType: 'Patient', id: `${i + 1}` },
+      })),
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+    const callOrder: string[] = [];
+    const results = await client.search('Patient', {}, {
+      fetchAll: true,
+      transform: async (resource) => {
+        callOrder.push(`start-${resource.id}`);
+        await Promise.resolve();
+        callOrder.push(`end-${resource.id}`);
+        return resource.id === '2' ? undefined : resource.id;
+      },
+    });
+
+    expect(results).toEqual(['1', '3']);
+    expect(callOrder).toEqual(['start-1', 'end-1', 'start-2', 'end-2', 'start-3', 'end-3']);
+  });
+
+  test('search with fetchAll and transform should pass undefined mode without shifting later arguments', async () => {
+    const bundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: [
+        {
+          resource: { resourceType: 'Patient', id: '1' },
+        },
+      ],
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+    const results = await client.search('Patient', {}, {
+      fetchAll: true,
+      transform: (resource, mode, index, entry) => ({
+        id: resource.id,
+        mode,
+        index,
+        entryId: entry.resource?.id,
+      }),
+    });
+
+    expect(results).toEqual([
+      {
+        id: '1',
+        mode: undefined,
+        index: 0,
+        entryId: '1',
+      },
+    ]);
+  });
+
   test('create should make a POST request', async () => {
     const patient = { resourceType: 'Patient', name: [{ family: 'Doe' }] };
     mockedAxios.request.mockResolvedValueOnce({
@@ -724,6 +831,70 @@ describe('FhirClient', () => {
     await expect(client.search('Patient', {}, { fetchAll: true, maxResults: 8 })).rejects.toThrow(
       'Maximum result limit (8) exceeded',
     );
+  });
+
+  test('should enforce maxResults before transform filtering', async () => {
+    const bundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: Array.from({ length: 3 }, (_, i) => ({
+        resource: { resourceType: 'Patient', id: `${i + 1}` },
+      })),
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+    await expect(
+      client.search('Patient', {}, {
+        fetchAll: true,
+        maxResults: 2,
+        transform: () => undefined,
+      }),
+    ).rejects.toThrow('Maximum result limit (2) exceeded');
+  });
+
+  test('should reject transform when fetchAll is false', async () => {
+    await expect(
+      client.search('Patient', {}, { fetchAll: false, transform: (() => 'x') as never } as any),
+    ).rejects.toThrow('The transform option is only supported when fetchAll is true.');
+  });
+
+  test('should reject transform when fetchAll is omitted', async () => {
+    await expect(client.search('Patient', {}, { transform: (() => 'x') as never } as any)).rejects.toThrow(
+      'The transform option is only supported when fetchAll is true.',
+    );
+  });
+
+  test('should reject non-callable transform', async () => {
+    await expect(
+      client.search('Patient', {}, { fetchAll: true, transform: 'nope' } as any),
+    ).rejects.toThrow('The transform option must be a function.');
+  });
+
+  test('should fail fast when transform throws', async () => {
+    const bundle: Bundle = {
+      resourceType: 'Bundle',
+      type: 'searchset',
+      entry: [
+        { resource: { resourceType: 'Patient', id: '1' } },
+        { resource: { resourceType: 'Patient', id: '2' } },
+      ],
+    };
+
+    mockedAxios.request.mockResolvedValueOnce({ data: bundle });
+
+    const transform = jest.fn((resource: { id?: string }) => {
+      if (resource.id === '2') {
+        throw new Error('transform failed');
+      }
+
+      return resource.id;
+    });
+
+    await expect(client.search('Patient', {}, { fetchAll: true, transform })).rejects.toThrow(
+      'transform failed',
+    );
+    expect(transform).toHaveBeenCalledTimes(2);
   });
 
   test('should use POST with _search endpoint when asPost is true', async () => {
